@@ -1,0 +1,41 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "antiCheatLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "trackId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "periodId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "leaderboards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "steps",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastUpdated",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

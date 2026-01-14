@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Pace Legends</string>
+    
+    <!-- TrackDetailScreen -->
+    <string name="track_downloading">Pist Verisi İndiriliyor... %%%d</string>
+    <string name="label_best">EN İYİ</string>
+    <string name="label_projected">TAHMİNİ</string>
+    <string name="label_record_pace">REKOR TEMPO! 🔥</string>
+    <string name="track_start">Başlangıç</string>
+    <string name="track_me">Sen</string>
+    <string name="back">Geri</string>
+    
+    <!-- Dashboard -->
+    <string name="lap_progress">Tur İlerlemesi: %d%%</string>
+    <string name="label_lap">TUR</string>
+    <string name="label_remaining">KALAN</string>
+    <string name="leaderboard_button">🏆 Lider Tablosu</string>
+    <string name="stats_button">📊 İstatistikler</string>
+    
+    <!-- LivePaceCard -->
+    <string name="period_completed">Dönem Tamamlandı</string>
+    <string name="hours_remaining">%d saat kaldı</string>
+    <string name="days_remaining">%d gün kaldı</string>
+    <string name="minutes_remaining">%d dakika kaldı</string>
+    <string name="time_expired">Dönem bitti</string>
+    <string name="time_upcoming">Yakında başlıyor</string>
+</resources>

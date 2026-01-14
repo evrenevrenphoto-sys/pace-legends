@@ -1,0 +1,154 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================
+    // 🔒 HELPER FUNCTIONS
+    // ============================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user owns this document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Check if request is from Cloud Functions (admin)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    
+    // Validate step delta is within anti-cheat limits
+    // Max 5000 steps per sync (roughly 4km, ~1 hour of intense walking)
+    function isValidStepDelta(newSteps, oldSteps) {
+      let delta = newSteps - oldSteps;
+      return delta >= 0 && delta <= 5000;
+    }
+    
+    // Validate monthly steps is reasonable (max 500k per month = ~16k/day)
+    function isValidMonthlySteps(steps) {
+      return steps >= 0 && steps <= 500000;
+    }
+    
+    // ============================================================
+    // � USER DOCUMENTS
+    // ============================================================
+    match /users/{userId} {
+      // Read: Only owner
+      allow read: if isOwner(userId);
+      
+      // Create: Only owner, with BOTH required fields
+      // 🔒 Uses hasAll to ensure complete data on first write
+      allow create: if isOwner(userId)
+                    && request.resource.data.keys().hasAll(['monthlySteps', 'activeTrackId']);
+      
+      // Update: Owner only, with validation
+      allow update: if isOwner(userId)
+                    // 🛡️ ANTI-CHEAT: Validate step increment is reasonable
+                    && isValidMonthlySteps(request.resource.data.monthlySteps)
+                    && (
+                      // If monthlySteps exists in old doc, validate delta
+                      !('monthlySteps' in resource.data) 
+                      || isValidStepDelta(request.resource.data.monthlySteps, resource.data.monthlySteps)
+                    )
+                    // 🔒 PROTECTED FIELDS: Cannot be modified by client
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                        .hasAny(['antiCheat', 'admin', 'coins', 'premium', 'banned']);
+      
+      // Delete: Owner only (GDPR compliance)
+      allow delete: if isOwner(userId);
+
+      // --------------------------------------------------------
+      // 🔒 STEP SYNC EVENTS (Idempotency Tokens)
+      // Write-Once, Immutable - prevents double-counting
+      // --------------------------------------------------------
+      match /stepSyncEvents/{syncToken} {
+        // Read: Owner only (for debugging)
+        allow read: if isOwner(userId);
+        
+        // Create: Owner only, with validation
+        allow create: if isOwner(userId)
+                      // Required fields
+                      && request.resource.data.keys().hasAll(['stepDelta', 'trackId', 'timestamp'])
+                      // 🛡️ Valid step count (steps > 0 for cost optimization)
+                      && request.resource.data.stepDelta > 0
+                      && request.resource.data.stepDelta <= 5000
+                      // 🔒 Must use server timestamp
+                      && request.resource.data.timestamp == request.time;
+        
+        // 🔒 IMMUTABLE: No updates or deletes allowed
+        allow update, delete: if false;
+      }
+      
+      // --------------------------------------------------------
+      // 🏆 CHAMPION BADGES (Server-Only Write)
+      // --------------------------------------------------------
+      match /championBadges/{badgeId} {
+        allow read: if isAuthenticated();
+        allow write: if false; // Only Cloud Functions
+      }
+      
+      // --------------------------------------------------------
+      // 📊 PERIOD HISTORY (Server-Only Write)
+      // --------------------------------------------------------
+      match /periodHistory/{periodId} {
+        allow read: if isOwner(userId);
+        allow write: if false; // Only Cloud Functions (archive on period end)
+      }
+    }
+    
+    // ============================================================
+    // 🏁 LEADERBOARDS (Read-Only for Clients)
+    // ============================================================
+    match /leaderboards/{trackId}/monthly/{periodId}/entries/{entryUserId} {
+      allow read: if true; // Public leaderboard
+      allow write: if false; // Only Cloud Functions
+    }
+
+    // ============================================================
+    // �️ LEAGUES & QUALIFYING (Server-Managed)
+    // ============================================================
+    match /leagues/{leagueId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only Cloud Functions
+      
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+    }
+
+    match /qualifying/{poolId}/entries/{userId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // ============================================================
+    // �️ ANTI-CHEAT LOGS (Append-Only)
+    // ============================================================
+    match /antiCheatLogs/{logId} {
+      // Read: Admin only
+      allow read: if isAdmin();
+      
+      // Create: Authenticated users can log their own violations
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasAll(['userId', 'type', 'timestamp'])
+                    && request.resource.data.timestamp == request.time;
+      
+      // 🔒 APPEND-ONLY: No modifications
+      allow update, delete: if false;
+    }
+    
+    // ============================================================
+    // 🔒 DEFAULT: Deny Everything Else
+    // ============================================================
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}

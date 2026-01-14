@@ -1,0 +1,170 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "73991734d5dfc560a88eda669268335d",
+    "entities": [
+      {
+        "tableName": "tracks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `genericName` TEXT NOT NULL, `geoJsonUrl` TEXT NOT NULL, `totalDistanceMeters` INTEGER NOT NULL, `isActive` INTEGER NOT NULL, `isPremium` INTEGER NOT NULL, `recordTimeSeconds` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "genericName",
+            "columnName": "genericName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geoJsonUrl",
+            "columnName": "geoJsonUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceMeters",
+            "columnName": "totalDistanceMeters",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "isActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPremium",
+            "columnName": "isPremium",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordTimeSeconds",
+            "columnName": "recordTimeSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "user_progress",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` TEXT NOT NULL, `userId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `totalSteps` INTEGER NOT NULL, `completedLoops` INTEGER NOT NULL, `totalActiveTimeMillis` INTEGER NOT NULL, `lastUpdateTimestamp` INTEGER NOT NULL, `bestLapTimeSeconds` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `lastSyncedTimestamp` INTEGER NOT NULL, PRIMARY KEY(`trackId`))",
+        "fields": [
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedLoops",
+            "columnName": "completedLoops",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalActiveTimeMillis",
+            "columnName": "totalActiveTimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdateTimestamp",
+            "columnName": "lastUpdateTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bestLapTimeSeconds",
+            "columnName": "bestLapTimeSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSynced",
+            "columnName": "isSynced",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedTimestamp",
+            "columnName": "lastSyncedTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "trackId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "user_badges",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`badgeId` TEXT NOT NULL, `earnedTimestamp` INTEGER NOT NULL, PRIMARY KEY(`badgeId`))",
+        "fields": [
+          {
+            "fieldPath": "badgeId",
+            "columnName": "badgeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "earnedTimestamp",
+            "columnName": "earnedTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "badgeId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '73991734d5dfc560a88eda669268335d')"
+    ]
+  }
+}

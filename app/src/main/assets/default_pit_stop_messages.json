@@ -1,0 +1,14 @@
+{
+    "warning_level": [
+        {
+            "title": "⚠️ Hız Kaybediyorsun!",
+            "body": "Lastiklerin aşınmaya başladı. Temponu korumak için pite gel."
+        }
+    ],
+    "critical_level": [
+        {
+            "title": "🛑 Kritik Aşınma!",
+            "body": "Lastikler bitti, şu an boşuna tur atıyorsun. Hemen değişim yap!"
+        }
+    ]
+}

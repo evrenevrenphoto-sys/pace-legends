@@ -1,0 +1,32 @@
+[
+  {
+    "id": "istanbul_park",
+    "genericName": {
+      "tr": "Boğaziçi Pisti",
+      "en": "Bosphorus Circuit"
+    },
+    "description": {
+      "tr": "Kıtalararası yarış deneyimi...",
+      "en": "Intercontinental racing experience..."
+    },
+    "totalDistanceMeters": 5338,
+    "geoJsonUrl": "grand_prix_istanbul.json",
+    "isActive": true,
+    "version": 1
+  },
+  {
+    "id": "spa",
+    "genericName": {
+      "tr": "Orman Pisti",
+      "en": "Forest Apex"
+    },
+    "description": {
+      "tr": "Efsanevi tırmanış ve orman...",
+      "en": "Legendary climb through the forest..."
+    },
+    "totalDistanceMeters": 7004,
+    "geoJsonUrl": "https://firebasestorage.googleapis.com/v0/b/pacelegends.firebasestorage.app/o/BelgianForestLoop.json?alt=media&token=219c57ed-bbd3-441d-8b69-83cf53d9323e",
+    "isActive": true,
+    "version": 1
+  }
+]

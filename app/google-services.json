@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "253505587084",
+    "project_id": "pacelegends",
+    "storage_bucket": "pacelegends.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:253505587084:android:f10f3bc5c2ec66509b38a9",
+        "android_client_info": {
+          "package_name": "com.pace.legends"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "253505587084-avq387g7pbg931nl4dphsrtdfjgrteng.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pace.legends",
+            "certificate_hash": "01b292cf811019f990a2a9e06dd2351da43212d4"
+          }
+        },
+        {
+          "client_id": "253505587084-k2420uu4i5t8m5idlc5k9eapdcp5u2vc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pace.legends",
+            "certificate_hash": "1055034b819805ac422437f60f2f44da69ebbd82"
+          }
+        },
+        {
+          "client_id": "253505587084-jg3dsn3orburi053g3pt46fhjq20rhqj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCnyJkF6lH3-i8G7uYpuoZprl72Ou_Pg_M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "253505587084-jg3dsn3orburi053g3pt46fhjq20rhqj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

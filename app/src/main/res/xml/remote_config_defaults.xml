@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<defaultsMap>
+    <!-- Ad Settings -->
+    <entry>
+        <key>show_interstitial_ads</key>
+        <value>true</value>
+    </entry>
+    
+    <!-- Feature Flags -->
+    <entry>
+        <key>enable_ghost_racer</key>
+        <value>true</value>
+    </entry>
+    <entry>
+        <key>enable_leagues</key>
+        <value>true</value>
+    </entry>
+    
+    <!-- Track Data -->
+    <entry>
+        <key>track_list_json</key>
+        <value>[]</value>
+    </entry>
+    <entry>
+        <key>force_update_min_version</key>
+        <value>1</value>
+    </entry>
+</defaultsMap>
