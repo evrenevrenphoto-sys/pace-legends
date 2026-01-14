@@ -3,6 +3,7 @@ package com.pace.legends.ui.leaderboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pace.legends.domain.manager.StepSyncManager
+import com.pace.legends.domain.model.PeriodInfo
 import com.pace.legends.domain.repository.AuthRepository
 import com.pace.legends.domain.repository.LeaderboardEntry
 import com.pace.legends.domain.repository.LeaderboardRepository
@@ -46,8 +47,8 @@ class LeaderboardViewModel @Inject constructor(
     val currentMonth: StateFlow<String> = _currentMonth.asStateFlow()
     
     // Period bilgisi
-    private val _periodInfo = MutableStateFlow(StepSyncManager.PeriodInfo.empty())
-    val periodInfo: StateFlow<StepSyncManager.PeriodInfo> = _periodInfo.asStateFlow()
+    private val _periodInfo = MutableStateFlow(PeriodInfo.empty())
+    val periodInfo: StateFlow<PeriodInfo> = _periodInfo.asStateFlow()
     
     // ✅ Error State (standardized)
     private val _errorMessage = MutableStateFlow<String?>(null)

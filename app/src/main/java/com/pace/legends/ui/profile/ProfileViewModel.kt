@@ -115,26 +115,26 @@ class ProfileViewModel @Inject constructor(
     
     private fun loadActiveFrame() {
         viewModelScope.launch {
-            _activeFrame.value = rewardManager.getActiveFrame()
+            _activeFrame.value = rewardManager.getActiveFrame().getOrDefault(com.pace.legends.domain.model.AvatarFrame.DEFAULT)
         }
     }
     
     fun loadUnlockedFrames() {
         viewModelScope.launch {
-            _unlockedFrames.value = rewardManager.getUnlockedFrames()
+            _unlockedFrames.value = rewardManager.getUnlockedFrames().getOrDefault(emptyList())
         }
     }
     
     fun setActiveFrame(frameId: String) {
         viewModelScope.launch {
             _isLoading.value = true
-            val success = rewardManager.setActiveFrame(frameId)
-            if (success) {
+            val result = rewardManager.setActiveFrame(frameId)
+            if (result.isSuccess) {
                 loadUserInfo()
                 loadActiveFrame()
                 _snackbarEvent.emit("🖼️ Tema değiştirildi!")
             } else {
-                _snackbarEvent.emit("❌ Tema değiştirilemedi veya kilitli.")
+                _snackbarEvent.emit("❌ Tema değiştirilemedi: ${result.exceptionOrNull()?.message ?: "Kilitli"}")
             }
             _isLoading.value = false
         }
@@ -185,12 +185,8 @@ class ProfileViewModel @Inject constructor(
     
     private fun loadCoinBalance() {
         viewModelScope.launch {
-            try {
-                val balance = rewardManager.getCoinBalance()
-                _coinBalance.value = balance
-            } catch (e: Exception) {
-                android.util.Log.e("ProfileVM", "Failed to load coin balance: ${e.message}")
-            }
+            val balance = rewardManager.getCoinBalance().getOrDefault(0L)
+            _coinBalance.value = balance
         }
     }
     
@@ -414,15 +410,16 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val amount = rewardManager.addCoins(
+                val amountResult = rewardManager.addCoins(
                     type = com.pace.legends.domain.model.CoinRewardType.DEBUG_BONUS,
                     description = "DEBUG: Manuel Coin Ekleme"
                 )
-                if (amount > 0) {
+                val amount = amountResult.getOrNull()
+                if (amount != null && amount > 0) {
                     loadCoinBalance()
                     _snackbarEvent.emit("💰 DEBUG: +$amount Coin Eklendi!")
                 } else {
-                    _snackbarEvent.emit("❌ Coin eklenemedi (kullanıcı girişi gerekli)")
+                     _snackbarEvent.emit("❌ Coin eklenemedi: ${amountResult.exceptionOrNull()?.message}")
                 }
             } catch (e: Exception) {
                 _snackbarEvent.emit("❌ Hata: ${e.message}")
@@ -441,7 +438,9 @@ class ProfileViewModel @Inject constructor(
             amount = 500,
             message = "Debug Test Ödülü: Harika İş! (Sadece UI test, coin eklenmedi)"
         )
-        _currentReward.value = testEvent
+        val method = ProfileViewModel::class.java.getDeclaredField("_currentReward")
+        method.isAccessible = true
+        (method.get(this) as MutableStateFlow<com.pace.legends.domain.manager.RewardManager.RewardEvent?>).value = testEvent
     }
 
     /**

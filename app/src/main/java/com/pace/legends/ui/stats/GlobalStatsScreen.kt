@@ -18,6 +18,7 @@ import com.pace.legends.domain.repository.AllTimeStats
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pace.legends.domain.manager.StepSyncManager
 import com.pace.legends.domain.model.PeriodHistory
+import com.pace.legends.domain.model.PeriodInfo
 import com.pace.legends.ui.leaderboard.RemainingTimeBadge
 
 @Composable
@@ -163,7 +164,7 @@ fun GlobalStatsScreen(
 // ==================== AKTİF YARIŞ KARTI ====================
 @Composable
 fun ActiveRaceCard(
-    periodInfo: StepSyncManager.PeriodInfo,
+    periodInfo: PeriodInfo,
     stats: GlobalStatsUiState.CurrentRaceStats
 ) {
     Card(
@@ -218,7 +219,7 @@ fun StatItem(emoji: String, value: String, label: String) {
 
 @Composable
 fun RacePeriodCard(
-    periodInfo: StepSyncManager.PeriodInfo,
+    periodInfo: PeriodInfo,
     steps: Long
 ) {
     Card(

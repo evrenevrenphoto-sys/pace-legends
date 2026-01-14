@@ -43,8 +43,8 @@ class StoreViewModel @Inject constructor(
     
     fun loadData() {
         viewModelScope.launch {
-            _coinBalance.value = rewardManager.getCoinBalance()
-            val unlocked = rewardManager.getUnlockedFrames()
+            _coinBalance.value = rewardManager.getCoinBalance().getOrDefault(0L)
+            val unlocked = rewardManager.getUnlockedFrames().getOrDefault(emptyList())
             _ownedFrameIds.value = unlocked.map { it.id }
         }
     }
@@ -60,12 +60,16 @@ class StoreViewModel @Inject constructor(
             if (_isLoading.value) return@launch
             _isLoading.value = true
             
-            val success = rewardManager.buyAvatarFrame(frame)
-            if (success) {
+            val result = rewardManager.buyAvatarFrame(frame)
+            if (result.isSuccess) {
                 _snackbarEvent.emit("🎉 ${frame.name} satın alındı!")
                 loadData() // Bakiye ve envanteri güncelle
             } else {
-                _snackbarEvent.emit("❌ Satın alma başarısız (Yetersiz bakiye veya zaten sahipsiniz)")
+                val error = result.exceptionOrNull()
+                val msg = if (error?.message == "ALREADY_OWNED") "Zaten sahipsiniz" 
+                         else if (error?.message == "INSUFFICIENT_FUNDS") "Yetersiz bakiye"
+                         else "Satın alma başarısız"
+                _snackbarEvent.emit("❌ $msg")
             }
             
             _isLoading.value = false

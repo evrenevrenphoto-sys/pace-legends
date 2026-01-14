@@ -66,6 +66,11 @@ class DataSyncWorker @AssistedInject constructor(
                 force = true // Background sync always forces
             )
             
+            // 🆕 P3: Propagate success to local DB
+            if (syncResult is SyncResult.Success && activeTrackId != null) {
+                stepRepository.markSynced(activeTrackId)
+            }
+            
             // 4. Map result to Worker Result
             mapSyncResultToWorkerResult(syncResult)
             

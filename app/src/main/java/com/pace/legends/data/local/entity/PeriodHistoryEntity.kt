@@ -9,7 +9,11 @@ import com.pace.legends.domain.model.PeriodHistory
  */
 @Entity(
     tableName = "period_history",
-    primaryKeys = ["periodId", "userId", "trackId"]
+    primaryKeys = ["periodId", "userId", "trackId"],
+    indices = [
+        androidx.room.Index(value = ["userId"]),
+        androidx.room.Index(value = ["userId", "trackId"]) // Filtering
+    ]
 )
 data class PeriodHistoryEntity(
     val periodId: String,

@@ -25,51 +25,57 @@ class GetLeaderboardUseCase @Inject constructor(
      * Get processed leaderboard with current user merged and ranked.
      */
     suspend operator fun invoke(trackId: String, periodId: String): Result<List<LeaderboardEntry>> {
-        return try {
-            // 1. Fetch Firestore Data (Others)
-            val firestoreEntries = leaderboardRepository.getMonthlyLeaderboard(trackId, periodId)
+        // 1. Fetch Firestore Data (Others) -> Now returns Result
+        val repoResult = leaderboardRepository.getMonthlyLeaderboard(trackId, periodId)
+        
+        return if (repoResult.isFailure) {
+            Result.failure(repoResult.exceptionOrNull() ?: Exception("Unknown error"))
+        } else {
+            val firestoreEntries = repoResult.getOrNull() ?: emptyList()
             
-            // 2. Fetch My Local Data (Source of Truth: Health Connect via Fresh Fetch)
-            val mySteps = stepRepository.getFreshCurrentPeriodSteps()
-            val userId = authRepository.getCurrentUserId()
-            
-            val finalLeaderboard = if (userId != null) {
-                // TODO: User displayName should ideally come from a cached profile repo to avoid auth calls
-                val currentUser = authRepository.getCurrentUser()
-                val myDisplayName = currentUser?.displayName ?: "Sen"
+            try {
+                // 2. Fetch My Local Data (Source of Truth: Health Connect via Fresh Fetch)
+                val mySteps = stepRepository.getFreshCurrentPeriodSteps()
+                val userId = authRepository.getCurrentUserId()
                 
-                // 3. Create My Entry (Always fresh)
-                val myEntry = LeaderboardEntry(
-                    userId = userId,
-                    displayName = myDisplayName,
-                    steps = mySteps,
-                    rank = 0, // Will be calculated
-                    isCurrentUser = true
-                )
-                
-                // 4. Filter out stale "Me" from Firestore list
-                val others = firestoreEntries.filter { it.userId != userId }
-                
-                // 5. Merge & Sort
-                val combined = (others + myEntry)
-                    .filter { it.steps > 0 } // Filter out zero steps
-                    .sortedByDescending { it.steps }
-                
-                // 6. Re-Rank
-                combined.mapIndexed { index, entry -> 
-                    entry.copy(rank = index + 1)
-                }
-            } else {
-                firestoreEntries
-                    .sortedByDescending { it.steps }
-                    .mapIndexed { index, entry -> 
+                val finalLeaderboard = if (userId != null) {
+                    // TODO: User displayName should ideally come from a cached profile repo to avoid auth calls
+                    val currentUser = authRepository.getCurrentUser()
+                    val myDisplayName = currentUser?.displayName ?: "Sen"
+                    
+                    // 3. Create My Entry (Always fresh)
+                    val myEntry = LeaderboardEntry(
+                        userId = userId,
+                        displayName = myDisplayName,
+                        steps = mySteps,
+                        rank = 0, // Will be calculated
+                        isCurrentUser = true
+                    )
+                    
+                    // 4. Filter out stale "Me" from Firestore list
+                    val others = firestoreEntries.filter { it.userId != userId }
+                    
+                    // 5. Merge & Sort
+                    val combined = (others + myEntry)
+                        .filter { it.steps > 0 } // Filter out zero steps
+                        .sortedByDescending { it.steps }
+                    
+                    // 6. Re-Rank
+                    combined.mapIndexed { index, entry -> 
                         entry.copy(rank = index + 1)
                     }
+                } else {
+                    firestoreEntries
+                        .sortedByDescending { it.steps }
+                        .mapIndexed { index, entry -> 
+                            entry.copy(rank = index + 1)
+                        }
+                }
+                
+                Result.success(finalLeaderboard)
+            } catch (e: Exception) {
+                Result.failure(e)
             }
-            
-            Result.success(finalLeaderboard)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 }

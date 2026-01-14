@@ -51,33 +51,34 @@ class RewardManager @Inject constructor(
     /**
      * Kullanıcının coin bakiyesini getir
      */
-    suspend fun getCoinBalance(): Long {
-        val userId = authRepository.getCurrentUserId() ?: return 0L
+    /**
+     * Kullanıcının coin bakiyesini getir
+     */
+    suspend fun getCoinBalance(): Result<Long> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
+            
         return try {
             val doc = firestore.collection("users").document(userId).get().await()
-            doc.getLong("coins") ?: 0L
+            val balance = doc.getLong("coins") ?: 0L
+            Result.success(balance)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to get coin balance: ${e.message}")
-            0L
+            Result.failure(e)
         }
     }
     
     /**
      * Coin ekle ve işlem kaydı oluştur
-     * 
-     * @param type Ödül türü
-     * @param description Açıklama (opsiyonel)
-     * @param periodId Dönem ID (opsiyonel)
-     * @param trackId Pist ID (opsiyonel)
-     * @return Eklenen coin miktarı veya 0 (hata durumunda)
      */
     suspend fun addCoins(
         type: CoinRewardType,
         description: String = type.description,
         periodId: String? = null,
         trackId: String? = null
-    ): Int {
-        val userId = authRepository.getCurrentUserId() ?: return 0
+    ): Result<Int> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             val userRef = firestore.collection("users").document(userId)
@@ -121,28 +122,24 @@ class RewardManager @Inject constructor(
                 )
             )
             
-            type.amount
+            Result.success(type.amount)
             
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to add coins: ${e.message}")
-            0
+            Result.failure(e)
         }
     }
     
     /**
      * Lig yükselme ödülü ver
-     * 
-     * @param newTier Yeni lig kademesi
-     * @param periodId Dönem ID
-     * @param trackId Pist ID
      */
     suspend fun awardLeaguePromotion(
         newTier: LeagueTier,
         periodId: String? = null,
         trackId: String? = null
-    ) {
+    ): Result<Unit> {
         // 1. Coin ödülü
-        addCoins(
+        val coinResult = addCoins(
             type = CoinRewardType.LEAGUE_PROMOTION,
             description = "${newTier.displayName}'e yükseldin!",
             periodId = periodId,
@@ -150,41 +147,47 @@ class RewardManager @Inject constructor(
         )
         
         // 2. Çerçeve kilidi aç
-        unlockAvatarFrame(newTier)
+        val frameResult = unlockAvatarFrame(newTier)
+        
+        return if (coinResult.isSuccess && frameResult.isSuccess) {
+            Result.success(Unit)
+        } else {
+            // Partial success is still failure for the aggregate op? 
+            // Or strictly log failures. Let's return failure if ANY failed.
+            val exception = coinResult.exceptionOrNull() ?: frameResult.exceptionOrNull() 
+                ?: Exception("Unknown error awarding promotion")
+            Result.failure(exception)
+        }
     }
     
     /**
      * Dönem sonu sıralama ödülü ver
-     * 
-     * @param rank Kullanıcının sıralaması (1, 2, 3)
-     * @param periodId Dönem ID
-     * @param trackId Pist ID
      */
     suspend fun awardPeriodRank(
         rank: Int,
         periodId: String? = null,
         trackId: String? = null
-    ) {
-        val rewardType = CoinRewardType.forRank(rank) ?: return
+    ): Result<Unit> {
+        val rewardType = CoinRewardType.forRank(rank) ?: return Result.success(Unit) // No reward for this rank
         
-        addCoins(
+        val result = addCoins(
             type = rewardType,
             description = "Dönem sonu ${rank}. sıra ödülü",
             periodId = periodId,
             trackId = trackId
         )
+        return result.map { Unit }
     }
     
     /**
      * Avatar çerçevesi kilidi aç
-     * 
-     * @param tier Açılacak çerçevenin lig kademesi
      */
-    suspend fun unlockAvatarFrame(tier: LeagueTier) {
-        val userId = authRepository.getCurrentUserId() ?: return
+    suspend fun unlockAvatarFrame(tier: LeagueTier): Result<Unit> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         val frame = AvatarFrame.forTier(tier)
         
-        try {
+        return try {
             val userRef = firestore.collection("users").document(userId)
             
             // unlockedFrames array'ine ekle (duplicate'i önle)
@@ -204,17 +207,21 @@ class RewardManager @Inject constructor(
                 )
             )
             
+            Result.success(Unit)
+            
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to unlock frame: ${e.message}")
+            Result.failure(e)
         }
     }
     
     /**
      * Satın alma işlemi: Avatar Çerçevesi
      */
-    suspend fun buyAvatarFrame(frame: AvatarFrame): Boolean {
-        if (frame.price == null) return false
-        val userId = authRepository.getCurrentUserId() ?: return false
+    suspend fun buyAvatarFrame(frame: AvatarFrame): Result<Unit> {
+        if (frame.price == null) return Result.failure(IllegalArgumentException("Frame not for sale"))
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             firestore.runTransaction { transaction ->
@@ -257,21 +264,19 @@ class RewardManager @Inject constructor(
                 )
             )
             
-            true
+            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Buy frame failed: ${e.message}")
-            false
+            Result.failure(e)
         }
     }
     
     /**
      * Aktif çerçeveyi değiştir
-     * 
-     * @param frameId Çerçeve ID
-     * @return Başarılı mı
      */
-    suspend fun setActiveFrame(frameId: String): Boolean {
-        val userId = authRepository.getCurrentUserId() ?: return false
+    suspend fun setActiveFrame(frameId: String): Result<Unit> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             // Önce açılmış mı kontrol et
@@ -280,7 +285,7 @@ class RewardManager @Inject constructor(
             
             if (!unlockedFrames.contains(frameId)) {
                 android.util.Log.w(TAG, "Frame not unlocked: $frameId")
-                return false
+                return Result.failure(IllegalStateException("Frame locked"))
             }
             
             firestore.collection("users")
@@ -288,53 +293,57 @@ class RewardManager @Inject constructor(
                 .update("activeFrameId", frameId)
                 .await()
             
-            true
+            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to set active frame: ${e.message}")
-            false
+            Result.failure(e)
         }
     }
     
     /**
      * Kullanıcının açtığı çerçeveleri getir
      */
-    suspend fun getUnlockedFrames(): List<AvatarFrame> {
-        val userId = authRepository.getCurrentUserId() ?: return listOf(AvatarFrame.DEFAULT)
+    suspend fun getUnlockedFrames(): Result<List<AvatarFrame>> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             val doc = firestore.collection("users").document(userId).get().await()
             val unlockedIds = doc.get("unlockedFrames") as? List<*> ?: listOf("default")
             
-            AvatarFrame.ALL_FRAMES.map { frame ->
+            val frames = AvatarFrame.ALL_FRAMES.map { frame ->
                 frame.copy(isUnlocked = unlockedIds.contains(frame.id))
             }
+            Result.success(frames)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to get unlocked frames: ${e.message}")
-            listOf(AvatarFrame.DEFAULT)
+            Result.failure(e)
         }
     }
     
     /**
      * Aktif çerçeveyi getir
      */
-    suspend fun getActiveFrame(): AvatarFrame {
-        val userId = authRepository.getCurrentUserId() ?: return AvatarFrame.DEFAULT
+    suspend fun getActiveFrame(): Result<AvatarFrame> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             val doc = firestore.collection("users").document(userId).get().await()
             val frameId = doc.getString("activeFrameId") ?: "default"
-            AvatarFrame.byId(frameId)
+            Result.success(AvatarFrame.byId(frameId))
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to get active frame: ${e.message}")
-            AvatarFrame.DEFAULT
+            Result.failure(e)
         }
     }
     
     /**
      * Coin geçmişini getir (son N işlem)
      */
-    suspend fun getCoinHistory(limit: Int = 20): List<CoinTransaction> {
-        val userId = authRepository.getCurrentUserId() ?: return emptyList()
+    suspend fun getCoinHistory(limit: Int = 20): Result<List<CoinTransaction>> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         
         return try {
             val snapshot = firestore.collection("users")
@@ -345,7 +354,7 @@ class RewardManager @Inject constructor(
                 .get()
                 .await()
             
-            snapshot.documents.mapNotNull { doc ->
+            val history = snapshot.documents.mapNotNull { doc ->
                 try {
                     CoinTransaction(
                         id = doc.id,
@@ -359,9 +368,10 @@ class RewardManager @Inject constructor(
                     )
                 } catch (e: Exception) { null }
             }
+            Result.success(history)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Failed to get coin history: ${e.message}")
-            emptyList()
+            Result.failure(e)
         }
     }
 }

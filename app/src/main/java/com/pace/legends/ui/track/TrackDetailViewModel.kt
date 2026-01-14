@@ -87,7 +87,14 @@ class TrackDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 // TrackRepository üzerinden dinamik pist verisi çek
-                val track = trackRepository.getTrack(trackId) ?: run {
+                val trackResult = trackRepository.getTrack(trackId)
+                
+                if (trackResult.isFailure) {
+                    _uiState.update { it.copy(errorUserMessage = "Pist verisi yüklenemedi: ${trackResult.exceptionOrNull()?.message}") }
+                    return@launch
+                }
+                
+                val track = trackResult.getOrNull() ?: run {
                     _uiState.update { it.copy(errorUserMessage = "Pist bulunamadı") }
                     return@launch
                 }

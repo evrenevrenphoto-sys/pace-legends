@@ -33,6 +33,9 @@ import com.pace.legends.domain.manager.HealthConnectManager
 @Singleton
 class StepRepositoryImpl @Inject constructor(
     private val db: AppDatabase,
+    private val userProgressDao: UserProgressDao,
+    private val dailyStepLogDao: com.pace.legends.data.local.DailyStepLogDao,
+    private val lapHistoryDao: com.pace.legends.data.local.LapHistoryDao,
     private val authRepository: AuthRepository,
     private val stepSyncManager: com.pace.legends.domain.manager.StepSyncManager,
     private val healthConnectManager: HealthConnectManager,
@@ -43,8 +46,24 @@ class StepRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
 ) : StepRepository {
 
-    private val prefs = context.getSharedPreferences("pace_legends_race", Context.MODE_PRIVATE)
-    private val dao: UserProgressDao = db.userProgressDao()
+    private val prefs by lazy {
+        // ✅ P1-6: Use EncryptedSharedPreferences instead of plain SharedPreferences
+        val masterKey = androidx.security.crypto.MasterKey.Builder(context)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        androidx.security.crypto.EncryptedSharedPreferences.create(
+            context,
+            "pace_legends_race_encrypted", // New encrypted storage
+            masterKey,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+    // private val dao: UserProgressDao = db.userProgressDao() ❌ Removed in favor of injection
+    // private val dao = userProgressDao // Use the injected one directly if needed, or rename usage.
+    // Simplifying: I will replace usages of 'dao' with 'userProgressDao' in the file, but 'dao' is a short name used often.
+    // To minimize changes, I can do:
+    private val dao = userProgressDao
 
     private val _currentSteps = MutableStateFlow(0)
     override val currentSteps: StateFlow<Int> = _currentSteps
@@ -256,7 +275,7 @@ class StepRepositoryImpl @Inject constructor(
                             steps = realStepsToday,
                             distance = realStepsToday * com.pace.legends.domain.util.RaceProgressCalculator.STEP_TO_METERS
                         )
-                        db.dailyStepLogDao().insertLog(dailyLog)
+                        dailyStepLogDao.insertLog(dailyLog)
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("StepRepository", "Failed to update daily log", e)
@@ -279,22 +298,26 @@ class StepRepositoryImpl @Inject constructor(
         // 3. Cloud Sync - Outside Mutex (Fire-and-forget but SAFE)
         if (activeTrackId != null) {
             val totalSteps = _monthlySteps.value
-            val lastSyncedSteps = prefs.getLong("repo_last_synced_steps", 0L)
-            val lastSyncTime = prefs.getLong("repo_last_sync_time", 0L)
             
-            if (shouldSync(totalSteps, lastSyncedSteps, lastSyncTime, force)) {
-                repositoryScope.launch {
-                    try {
-                        val success = stepSyncManager.syncIfNeeded(totalSteps, activeTrackId, force = true)
-                        if (success) {
-                            prefs.edit()
-                                .putLong("repo_last_synced_steps", totalSteps)
-                                .putLong("repo_last_sync_time", System.currentTimeMillis())
-                                .apply()
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("StepRepository", "⚠️ Sync failed safely: ${e.message}")
+            // 🆕 P3 FIX: syncIfNeeded artık SyncLogic'i içeriyor (Throttling UseCase içinde)
+            // Sadece çağırmamız yeterli.
+            repositoryScope.launch {
+                try {
+                    // Pass the 'force' parameter from the method argument, don't hardcode true!
+                    val result = stepSyncManager.syncIfNeeded(totalSteps, activeTrackId, force = force)
+                    
+                    if (result is com.pace.legends.domain.usecase.sync.SyncResult.Success) {
+                        // ✅ Başarılı sync sonrası Local DB'yi güncelle
+                        markSynced(activeTrackId)
+                        
+                        // Prefs güncelle (Hala yedek olarak tutuyoruz)
+                        prefs.edit()
+                            .putLong("repo_last_synced_steps", totalSteps)
+                            .putLong("repo_last_sync_time", System.currentTimeMillis())
+                            .apply()
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("StepRepository", "⚠️ Sync failed safely: ${e.message}")
                 }
             }
         }
@@ -518,7 +541,7 @@ class StepRepositoryImpl @Inject constructor(
         val startTime = currentProgress?.currentLapStartTime ?: timestamp
         
         // 🔄 FIX v3: Dinamik pist uzunluğu (Remote Config/Firestore'dan)
-        val track = trackRepository.getTrack(trackId)
+        val track = trackRepository.getTrack(trackId).getOrNull()
         val trackDistanceMeters = track?.totalDistanceMeters?.toDouble() ?: 5338.0 // Fallback: İstanbul Park
         val totalDistanceMeters = _monthlySteps.value * com.pace.legends.domain.util.RaceProgressCalculator.STEP_TO_METERS
         val lapDistanceMeters = totalDistanceMeters % trackDistanceMeters
@@ -536,7 +559,7 @@ class StepRepositoryImpl @Inject constructor(
             periodId = stepSyncManager.getCurrentPeriod()
         )
         
-        db.lapHistoryDao().insertLap(lapHistory)
+        lapHistoryDao.insertLap(lapHistory)
         
         dao.addLoopsToTrack(userId, trackId, 1, timestamp)
         
@@ -647,15 +670,18 @@ class StepRepositoryImpl @Inject constructor(
         saveCurrentProgress()
     }
     
+    override suspend fun markSynced(trackId: String) {
+        val userId = getUserId() ?: return
+        dao.markSynced(userId, trackId, System.currentTimeMillis())
+        android.util.Log.d("StepRepository", "✅ Local DB marked as synced for $trackId")
+    }
+
     override suspend fun getSyncPendingProgress(): List<UserProgress> {
         val userId = getUserId() ?: return emptyList()
         return dao.getAllProgress(userId).map { it.toDomain() }
     }
 
-    override suspend fun markSynced(trackId: String) {
-        val userId = getUserId() ?: return
-        dao.markSynced(userId, trackId, System.currentTimeMillis())
-    }
+
 
     override fun getActiveRace(): com.pace.legends.domain.repository.ActiveRace? {
         val trackId = prefs.getString("active_track_id", null) ?: return null
@@ -734,7 +760,7 @@ class StepRepositoryImpl @Inject constructor(
         val userId = getUserId()
         if (!userId.isNullOrEmpty()) {
             dao.deleteAllProgress(userId)
-            try { db.lapHistoryDao().deleteAllLaps() } catch (e: Exception) { }
+            try { lapHistoryDao.deleteAllLaps() } catch (e: Exception) { }
         }
         
         try {

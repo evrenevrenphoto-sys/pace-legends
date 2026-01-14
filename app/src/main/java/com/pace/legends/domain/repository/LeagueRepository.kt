@@ -16,7 +16,7 @@ interface LeagueRepository {
     /**
      * Kullanıcının mevcut lig bilgisini getir
      */
-    suspend fun getUserLeagueInfo(userId: String): UserLeagueInfo
+    suspend fun getUserLeagueInfo(userId: String): Result<UserLeagueInfo>
     
     /**
      * @deprecated Use createLeague/addUserToLeague logic via LeagueManager
@@ -35,7 +35,7 @@ interface LeagueRepository {
         limit: Int = 100,
         lastSteps: Long? = null,
         lastUserId: String? = null
-    ): List<LeaderboardEntry>
+    ): Result<List<LeaderboardEntry>>
     
     /**
      * Belirli bir ligin sıralamasını getir (50 kişi)
@@ -45,7 +45,7 @@ interface LeagueRepository {
         limit: Int = 20,
         lastSteps: Long? = null,
         lastUserId: String? = null
-    ): List<LeaderboardEntry>
+    ): Result<List<LeaderboardEntry>>
     
     /**
      * Kullanıcıyı yeni lige ata (yükselme/düşme)
@@ -54,17 +54,17 @@ interface LeagueRepository {
         userId: String, 
         newTier: LeagueTier, 
         newLeagueId: String?
-    )
+    ): Result<Unit>
     
     /**
      * Boş yer olan lig bul (50'den az üyeli)
      */
-    suspend fun findAvailableLeague(tier: LeagueTier, trackId: String, maxMembers: Int): String?
+    suspend fun findAvailableLeague(tier: LeagueTier, trackId: String, maxMembers: Int): Result<String?>
     
     /**
      * Yeni lig oluştur
      */
-    suspend fun createLeague(tier: LeagueTier, trackId: String): String
+    suspend fun createLeague(tier: LeagueTier, trackId: String): Result<String>
     
     /**
      * @deprecated Use getUserLeagueRank
@@ -74,16 +74,16 @@ interface LeagueRepository {
     /**
      * Kullanıcının ligdeki sıralamasını getir
      */
-    suspend fun getUserLeagueRank(userId: String, leagueId: String): Int
+    suspend fun getUserLeagueRank(userId: String, leagueId: String): Result<Int>
     
     /**
      * 🆕 Kullanıcıyı lig üyesi olarak ekle ve memberCount'u artır
      */
-    suspend fun addUserToLeague(userId: String, leagueId: String, displayName: String)
+    suspend fun addUserToLeague(userId: String, leagueId: String, displayName: String): Result<Unit>
     
     /**
      * 🆕 Kullanıcıyı ligden çıkar ve memberCount'u azalt
      * Yükselme/düşme sırasında eski ligden temizlik için kullanılır
      */
-    suspend fun removeUserFromLeague(userId: String, leagueId: String)
+    suspend fun removeUserFromLeague(userId: String, leagueId: String): Result<Unit>
 }

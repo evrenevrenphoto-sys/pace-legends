@@ -22,7 +22,7 @@ interface LeaderboardRepository {
     suspend fun submitScore(userProgress: UserProgress)
     
     // 🆕 Aylık Maraton Leaderboard
-    suspend fun getMonthlyLeaderboard(trackId: String, month: String): List<LeaderboardEntry>
+    suspend fun getMonthlyLeaderboard(trackId: String, month: String, forceRefresh: Boolean = false): Result<List<LeaderboardEntry>>
     
     // 🆕 Ölçeklenebilir Sıralama (Top 100 dışındaki kullanıcılar için)
     suspend fun getUserRankBySteps(trackId: String, periodId: String, userSteps: Long): Int?

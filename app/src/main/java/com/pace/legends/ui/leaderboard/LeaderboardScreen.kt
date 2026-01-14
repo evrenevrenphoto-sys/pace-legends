@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.pace.legends.domain.repository.LeaderboardEntry
+import com.pace.legends.domain.model.PeriodInfo
 import com.pace.legends.ui.theme.*
 
 /**
@@ -432,7 +433,7 @@ fun UserRankBar(
 
 @Composable
 fun RaceHeader(
-    periodInfo: com.pace.legends.domain.manager.StepSyncManager.PeriodInfo,
+    periodInfo: PeriodInfo,
     trackName: String
 ) {
     Card(
@@ -492,7 +493,7 @@ fun RaceHeader(
 }
 
 @Composable
-fun RemainingTimeBadge(periodInfo: com.pace.legends.domain.manager.StepSyncManager.PeriodInfo) {
+fun RemainingTimeBadge(periodInfo: PeriodInfo) {
     val backgroundColor = when {
         periodInfo.isLastDay -> PaceDanger           // Kırmızı - Son gün!
         periodInfo.daysRemaining <= 3 -> PaceWarningOrange  // Turuncu - Az kaldı
@@ -519,7 +520,7 @@ fun RemainingTimeBadge(periodInfo: com.pace.legends.domain.manager.StepSyncManag
     }
 }
 
-private fun formatRemainingTime(info: com.pace.legends.domain.manager.StepSyncManager.PeriodInfo): String {
+private fun formatRemainingTime(info: PeriodInfo): String {
     return if (info.isExpired) "Süre doldu!" else info.remainingTimeDisplay
 }
 

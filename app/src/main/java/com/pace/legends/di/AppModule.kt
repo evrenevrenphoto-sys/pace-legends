@@ -44,7 +44,7 @@ object AppModule {
             AppDatabase::class.java,
             "pace_legends_db"
         )
-        .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13)
+        .addMigrations(AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17)
         
         // ⚠️ Sadece DEBUG modunda yıkıcı migrasyona izin ver
         // Production'da migration eksikse crash olur ama veri SİLİNMEZ
@@ -70,6 +70,30 @@ object AppModule {
     @Singleton
     fun providePeriodHistoryDao(appDatabase: AppDatabase): com.pace.legends.data.local.PeriodHistoryDao {
         return appDatabase.periodHistoryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserProgressDao(appDatabase: AppDatabase): com.pace.legends.data.local.UserProgressDao {
+        return appDatabase.userProgressDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLapHistoryDao(appDatabase: AppDatabase): com.pace.legends.data.local.LapHistoryDao {
+        return appDatabase.lapHistoryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLeaderboardCacheDao(appDatabase: AppDatabase): com.pace.legends.data.local.LeaderboardCacheDao {
+        return appDatabase.leaderboardCacheDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserCacheDao(appDatabase: AppDatabase): com.pace.legends.data.local.UserCacheDao {
+        return appDatabase.userCacheDao()
     }
 
     @Provides

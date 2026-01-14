@@ -33,8 +33,12 @@ class LeagueManager @Inject constructor(
     /**
      * Kullanıcının mevcut lig bilgisini getir
      */
-    suspend fun getCurrentLeagueInfo(): UserLeagueInfo {
-        val userId = authRepository.getCurrentUserId() ?: return UserLeagueInfo()
+    /**
+     * Kullanıcının mevcut lig bilgisini getir
+     */
+    suspend fun getCurrentLeagueInfo(): Result<UserLeagueInfo> {
+        val userId = authRepository.getCurrentUserId() 
+            ?: return Result.failure(Exception("User not logged in"))
         return leagueRepository.getUserLeagueInfo(userId)
     }
 
@@ -43,7 +47,10 @@ class LeagueManager @Inject constructor(
      * Lig = Pist konseptinin temel fonksiyonu
      */
     suspend fun getAssignedTrack(): String {
-        val leagueInfo = getCurrentLeagueInfo()
+        val leagueInfoResult = getCurrentLeagueInfo()
+        val leagueInfo = leagueInfoResult.getOrNull() 
+            ?: UserLeagueInfo() // Fallback to QUALIFYING if error (Safe Default)
+            
         return remoteConfigManager.getTrackForTier(leagueInfo.tier.name)
     }
 
@@ -69,7 +76,7 @@ class LeagueManager @Inject constructor(
         val userId = authRepository.getCurrentUserId() ?: return
         val periodId = stepSyncManager.getCurrentPeriod()
         
-        val currentInfo = leagueRepository.getUserLeagueInfo(userId)
+        val currentInfo = leagueRepository.getUserLeagueInfo(userId).getOrNull() ?: UserLeagueInfo()
         
         // Zaten bir ligde ise, LOCAL pist verisini güncelle (Restore)
         if (currentInfo.tier != LeagueTier.QUALIFYING) {
@@ -83,7 +90,7 @@ class LeagueManager @Inject constructor(
         val qualifyingTrackId = getTrackForTier(LeagueTier.QUALIFYING)
         
         // 🆕 UNIFIED BUCKETS: Eleme için 100 kişilik bucket kullan
-        val leagueId = findOrCreateLeague(LeagueTier.QUALIFYING, qualifyingTrackId)
+        val leagueId = findOrCreateLeague(LeagueTier.QUALIFYING, qualifyingTrackId) ?: return 
         
         leagueRepository.updateUserLeague(userId, LeagueTier.QUALIFYING, leagueId)
         
@@ -107,23 +114,18 @@ class LeagueManager @Inject constructor(
         limit: Int = 20,
         lastSteps: Long? = null,
         lastUserId: String? = null
-    ): List<LeaderboardEntry> {
-        val userId = authRepository.getCurrentUserId() ?: return emptyList()
-        val leagueInfo = leagueRepository.getUserLeagueInfo(userId)
+    ): Result<List<LeaderboardEntry>> {
+        val userId = authRepository.getCurrentUserId() ?: return Result.failure(Exception("User not logged in"))
+        
+        val leagueInfoResult = leagueRepository.getUserLeagueInfo(userId)
+        val leagueInfo = leagueInfoResult.getOrNull() 
+            ?: return Result.failure(leagueInfoResult.exceptionOrNull() ?: Exception("Failed to get league info"))
         
         return if (leagueInfo.leagueId != null) {
             leagueRepository.getLeagueLeaderboard(leagueInfo.leagueId, limit, lastSteps, lastUserId)
         } else {
-             // Fallback for logic if leagueId is null (should normally be registered to QUALIFYING)
-             // But qualifying also has period/track specific logic inside repo? 
-             // Actually repo.getQualifyingPoolLeaderboard needs track/period.
-             // Let's assume user is in a league or qualifying bucket handled by leagueId logic for now.
-             // If leagueInfo.leagueId is null, likely user is new.
-             val assignedTrack = getAssignedTrack() // e.g. Qualifying/Forest
-             // We need to know which bucket user is in for qualifying.
-             // Actually, findOrCreateLeague logic in registerNewUser handles this.
-             // If null, return empty list.
-             emptyList()
+             // Fallback logic
+             Result.success(emptyList())
         }
     }
 
@@ -132,10 +134,10 @@ class LeagueManager @Inject constructor(
      */
     suspend fun getUserRank(): Int {
         val userId = authRepository.getCurrentUserId() ?: return 0
-        val leagueInfo = leagueRepository.getUserLeagueInfo(userId)
+        val leagueInfo = leagueRepository.getUserLeagueInfo(userId).getOrNull() ?: return 0
         
         return leagueInfo.leagueId?.let { 
-             leagueRepository.getUserLeagueRank(userId, it) 
+             leagueRepository.getUserLeagueRank(userId, it).getOrNull()
         } ?: 0
     }
 
@@ -148,7 +150,7 @@ class LeagueManager @Inject constructor(
         periodId: String,
         userRank: Int
     ): PromotionResult? {
-        val currentInfo = leagueRepository.getUserLeagueInfo(userId)
+        val currentInfo = leagueRepository.getUserLeagueInfo(userId).getOrNull() ?: return null
         val currentTier = currentInfo.tier
         
         // 🔄 Remote Config'den dinamik threshold'lar
@@ -159,7 +161,7 @@ class LeagueManager @Inject constructor(
         if (userRank in 1..promotionThreshold && currentTier.canPromote()) {
             val newTier = currentTier.nextTier() ?: return null
             val newTrackId = getTrackForTier(newTier)
-            val newLeagueId = findOrCreateLeague(newTier, newTrackId)
+            val newLeagueId = findOrCreateLeague(newTier, newTrackId) ?: return null
             
             leagueRepository.updateUserLeague(userId, newTier, newLeagueId)
             
@@ -176,7 +178,10 @@ class LeagueManager @Inject constructor(
             stepSyncManager.forceUpdateActiveTrack(newTrackId)
             
             // 🆕 REWARD: Lig yükselme ödülü ver (Coin + Çerçeve)
-            rewardManager.awardLeaguePromotion(newTier, periodId, newTrackId)
+            val rewardResult = rewardManager.awardLeaguePromotion(newTier, periodId, newTrackId)
+            if (rewardResult.isFailure) {
+                android.util.Log.e(TAG, "⚠️ Failed to award league promotion: ${rewardResult.exceptionOrNull()?.message}")
+            }
             
             android.util.Log.d(TAG, "🎉 PROMOTION: $currentTier -> $newTier (New Track: $newTrackId)")
             return PromotionResult(
@@ -188,13 +193,16 @@ class LeagueManager @Inject constructor(
         
         // 🆕 REWARD: Dönem sonu sıralama ödülü (Top 3)
         if (userRank in 1..3) {
-            rewardManager.awardPeriodRank(userRank, periodId, getTrackForTier(currentTier))
+            val rewardResult = rewardManager.awardPeriodRank(userRank, periodId, getTrackForTier(currentTier))
+             if (rewardResult.isFailure) {
+                android.util.Log.e(TAG, "⚠️ Failed to award period rank: ${rewardResult.exceptionOrNull()?.message}")
+            }
         }
         
         // Düşme kontrolü (ligdeyse)
         if (currentTier != LeagueTier.QUALIFYING) {
             val totalInLeague = currentInfo.leagueId?.let { 
-                leagueRepository.getLeagueLeaderboard(it).size 
+                leagueRepository.getLeagueLeaderboard(it).getOrNull()?.size 
             } ?: remoteConfigManager.leagueSize.value
             
             val demotionZoneStart = totalInLeague - demotionThreshold + 1
@@ -236,13 +244,15 @@ class LeagueManager @Inject constructor(
         return null
     }
 
-    private suspend fun findOrCreateLeague(tier: LeagueTier, trackId: String): String {
+    private suspend fun findOrCreateLeague(tier: LeagueTier, trackId: String): String? {
         // 🆕 UNIFIED BUCKETS: Eleme için 100, diğerleri için config (50)
         val maxMembers = if (tier == LeagueTier.QUALIFYING) 100 
                          else remoteConfigManager.leagueSize.value
                          
-        return leagueRepository.findAvailableLeague(tier, trackId, maxMembers)
-            ?: leagueRepository.createLeague(tier, trackId)
+        val availableId = leagueRepository.findAvailableLeague(tier, trackId, maxMembers).getOrNull()
+        if (availableId != null) return availableId
+        
+        return leagueRepository.createLeague(tier, trackId).getOrNull()
     }
 }
 

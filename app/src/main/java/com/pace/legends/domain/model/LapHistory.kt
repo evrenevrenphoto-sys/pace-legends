@@ -3,7 +3,21 @@ package com.pace.legends.domain.model
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "lap_history")
+@Entity(
+    tableName = "lap_history",
+    indices = [
+        androidx.room.Index(value = ["userId", "trackId"]),
+        androidx.room.Index(value = ["endTime"])
+    ],
+    foreignKeys = [
+        androidx.room.ForeignKey(
+            entity = com.pace.legends.data.local.entity.UserProgressEntity::class,
+            parentColumns = ["userId", "trackId"],
+            childColumns = ["userId", "trackId"],
+            onDelete = androidx.room.ForeignKey.CASCADE
+        )
+    ]
+)
 data class LapHistory(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

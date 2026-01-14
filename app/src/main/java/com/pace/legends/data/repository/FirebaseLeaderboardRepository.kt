@@ -22,7 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class FirebaseLeaderboardRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val db: com.pace.legends.data.local.AppDatabase // 🆕 Cache Access
+    private val cacheDao: com.pace.legends.data.local.LeaderboardCacheDao // 🆕 Injected DAO
 ) : LeaderboardRepository {
 
     // 🆕 P2 FIX: Error state UI için (Error Swallowing önleme)
@@ -136,9 +136,10 @@ class FirebaseLeaderboardRepository @Inject constructor(
      */
     override suspend fun getMonthlyLeaderboard(
         trackId: String,
-        month: String
-    ): List<com.pace.legends.domain.repository.LeaderboardEntry> {
-        val cacheDao = db.leaderboardCacheDao()
+        month: String,
+        forceRefresh: Boolean
+    ): Result<List<com.pace.legends.domain.repository.LeaderboardEntry>> {
+        // val cacheDao = db.leaderboardCacheDao() // Removed
         val now = System.currentTimeMillis()
         val ttl = 6 * 60 * 60 * 1000L // 6 Saat Cache TTL
 
@@ -146,13 +147,14 @@ class FirebaseLeaderboardRepository @Inject constructor(
         val cacheTimestamp = cacheDao.getCacheTimestamp(trackId, month) ?: 0L
         val isCacheValid = (now - cacheTimestamp) < ttl
 
-        if (isCacheValid) {
+        if (isCacheValid && !forceRefresh) {
             val cachedList = cacheDao.getLeaderboard(trackId, month)
             if (cachedList.isNotEmpty()) {
                 android.util.Log.d("LeaderboardRepo", "✅ Using Cached Leaderboard (${cachedList.size} entries)")
-                return cachedList.map { 
+                val mapped = cachedList.map { 
                     com.pace.legends.domain.repository.LeaderboardEntry(it.userId, it.displayName, it.steps, it.rank)
                 }
+                return Result.success(mapped)
             }
         }
 
@@ -202,20 +204,27 @@ class FirebaseLeaderboardRepository @Inject constructor(
                 }
             }
             
-            // 3. Cache Güncelle (Async yapabiliriz ama basitlik için await)
+            // 3. Cache Güncelle
             if (cacheEntities.isNotEmpty()) {
                 cacheDao.clearLeaderboard(trackId, month)
                 cacheDao.insertAll(cacheEntities)
                 android.util.Log.d("LeaderboardRepo", "💾 Leaderboard Cached (${cacheEntities.size} entries)")
             }
             
-            entries
+            Result.success(entries)
         } catch (e: Exception) {
             android.util.Log.e("LeaderboardRepo", "Leaderboard fetch failed: ${e.message}")
             // Fallback to cache if network fails, even if expired
             val fallbackCache = cacheDao.getLeaderboard(trackId, month)
-            fallbackCache.map { 
-                com.pace.legends.domain.repository.LeaderboardEntry(it.userId, it.displayName, it.steps, it.rank)
+            if (fallbackCache.isNotEmpty()) {
+                val mapped = fallbackCache.map { 
+                    com.pace.legends.domain.repository.LeaderboardEntry(it.userId, it.displayName, it.steps, it.rank)
+                }
+                // Return success but technically it's stale (could handle stale state later)
+                Result.success(mapped)
+            } else {
+                // 🚀 P1 FIX: Propagate error instead of empty list
+                Result.failure(e)
             }
         }
     }
