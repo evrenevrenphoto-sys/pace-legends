@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^3.4.0"
+    "@firebase/rules-unit-testing": "^5.0.0"
   },
   "scripts": {
-    "test": "node testAntiCheatRules.js"
+    "test": "npx firebase emulators:exec \"node testAntiCheatRules.js\""
   }
 }
