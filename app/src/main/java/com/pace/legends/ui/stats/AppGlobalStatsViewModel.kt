@@ -2,6 +2,7 @@ package com.pace.legends.ui.stats
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pace.legends.domain.model.PeriodInfo
 import com.pace.legends.domain.manager.StepSyncManager
 import com.pace.legends.domain.repository.AuthRepository
 import com.pace.legends.domain.repository.StepRepository
@@ -30,12 +31,16 @@ class AppGlobalStatsViewModel @Inject constructor(
     private val stepSyncManager: StepSyncManager,
     private val authRepository: AuthRepository,
     private val trackRepository: com.pace.legends.domain.repository.TrackRepository,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val dailyStepLogDao: com.pace.legends.data.local.DailyStepLogDao // 🚀 P1: Direct DB Access for Aggregation
 ) : ViewModel() {
 
     // ✅ Single Source of Truth
     private val _uiState = MutableStateFlow(GlobalStatsUiState())
     val uiState: StateFlow<GlobalStatsUiState> = _uiState.asStateFlow()
+
+    // ✅ Race condition guard (P1 fix)
+    private val loadMutex = kotlinx.coroutines.sync.Mutex()
 
     init {
         loadStats()
@@ -43,7 +48,14 @@ class AppGlobalStatsViewModel @Inject constructor(
 
     fun loadStats() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            // Prevent concurrent execution
+            if (!loadMutex.tryLock()) {
+                android.util.Log.w("GlobalStatsVM", "Load already in progress, skipping duplicate")
+                return@launch
+            }
+            
+            try {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             
             try {
                 // 1. Period Info (Fast)
@@ -51,7 +63,7 @@ class AppGlobalStatsViewModel @Inject constructor(
                     stepSyncManager.getCurrentPeriodInfo()
                 } catch (e: Exception) {
                     android.util.Log.e("GlobalStats", "Period Info Fail: ${e.message}")
-                    StepSyncManager.PeriodInfo.empty()
+                    PeriodInfo.empty()
                 }
                 
                 val userId = authRepository.getCurrentUserId()
@@ -68,19 +80,20 @@ class AppGlobalStatsViewModel @Inject constructor(
                 kotlinx.coroutines.supervisorScope {
                     val breakdownsDeferred = async { loadPeriodBreakdowns(periodInfo) }
                     val allTimeDeferred = async { 
-                        runCatching { statsRepository.getAllTimeStats() }
+                        statsRepository.getAllTimeStats()
                             .getOrDefault(AllTimeStats(0, 0, 0.0))
                     }
                     val pastPeriodsDeferred = async {
-                        runCatching { statsRepository.getPeriodHistory(userId) }
+                        statsRepository.getPeriodHistory(userId)
                             .getOrDefault(emptyList())
                     }
                     val trackDistanceDeferred = async {
-                        runCatching { 
-                            if (activeTrackId != null) {
-                                trackRepository.getTrack(activeTrackId)?.totalDistanceMeters?.toDouble() ?: 5338.0
-                            } else 5338.0
-                        }.getOrDefault(5338.0)
+                        if (activeTrackId != null) {
+                            val track = trackRepository.getTrack(activeTrackId).getOrNull()
+                            track?.totalDistanceMeters?.toDouble() ?: 5338.0
+                        } else {
+                            5338.0
+                        }
                     }
 
                     // Await all
@@ -121,6 +134,9 @@ class AppGlobalStatsViewModel @Inject constructor(
                 _uiState.update { 
                     it.copy(isLoading = false, errorMessage = "Veriler yüklenemedi: ${e.message}") 
                 }
+            } finally {
+                // ✅ Unlock after load completes (P1 fix)
+                loadMutex.unlock()
             }
         }
     }
@@ -147,20 +163,47 @@ class AppGlobalStatsViewModel @Inject constructor(
         val racePeriodSteps: Long
     )
     
-    private suspend fun loadPeriodBreakdowns(periodInfo: StepSyncManager.PeriodInfo): StepBreakdowns {
-        val now = java.time.Instant.now()
+    private suspend fun loadPeriodBreakdowns(periodInfo: PeriodInfo): StepBreakdowns {
+        val userId = authRepository.getCurrentUserId() ?: return StepBreakdowns(0, 0, 0, 0)
+        // Active track ID'yi al (null ise varsayılan kullanılabilir veya 0 döner)
+        // NOT: İdeal olan o anki seçili track için istatistik göstermektir.
+        val trackId = stepRepository.currentTrackId.value ?: return StepBreakdowns(0, 0, 0, 0)
+
+        // Date Calculations
         val zone = java.time.ZoneId.systemDefault()
+        val today = java.time.LocalDate.now()
         
-        val todayStart = java.time.LocalDate.now().atStartOfDay(zone).toInstant()
-        val weekStart = java.time.LocalDate.now().minusDays(6).atStartOfDay(zone).toInstant()
-        val monthStart = java.time.YearMonth.now().atDay(1).atStartOfDay(zone).toInstant()
-        val raceStart = periodInfo.startDate.atStartOfDay(zone).toInstant()
+        val todayEpoch = today.toEpochDay()
+        val weekStartEpoch = today.minusDays(6).toEpochDay() // Last 7 days inclusive
+        val monthStartEpoch = java.time.YearMonth.now().atDay(1).toEpochDay()
+        val monthEndEpoch = java.time.YearMonth.now().atEndOfMonth().toEpochDay()
         
-        return StepBreakdowns(
-            todaySteps = stepRepository.getStepsByTimeRange(todayStart, now),
-            weekSteps = stepRepository.getStepsByTimeRange(weekStart, now),
-            monthSteps = stepRepository.getStepsByTimeRange(monthStart, now),
-            racePeriodSteps = stepRepository.getStepsByTimeRange(raceStart, now)
-        )
+        // Race Period
+        val raceStartEpoch = periodInfo.startDate.toEpochDay()
+        val raceEndEpoch = periodInfo.endDate.toEpochDay()
+
+        // 🚀 PARALLEL EXECUTION (P1)
+        return kotlinx.coroutines.coroutineScope {
+            val todayDeferred = async { 
+                dailyStepLogDao.getStepsForDay(userId, trackId, todayEpoch) ?: 0L 
+            }
+            val weekDeferred = async { 
+                dailyStepLogDao.getStepsForDateRange(userId, trackId, weekStartEpoch, todayEpoch) ?: 0L 
+            }
+            val monthDeferred = async { 
+                dailyStepLogDao.getStepsForDateRange(userId, trackId, monthStartEpoch, monthEndEpoch) ?: 0L 
+            }
+            // Race period might be same as month, but kept separate for logic
+            val raceDeferred = async {
+                dailyStepLogDao.getStepsForDateRange(userId, trackId, raceStartEpoch, raceEndEpoch) ?: 0L
+            }
+            
+            StepBreakdowns(
+                todaySteps = todayDeferred.await(),
+                weekSteps = weekDeferred.await(),
+                monthSteps = monthDeferred.await(),
+                racePeriodSteps = raceDeferred.await()
+            )
+        }
     }
 }

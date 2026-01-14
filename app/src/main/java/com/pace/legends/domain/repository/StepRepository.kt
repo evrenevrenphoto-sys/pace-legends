@@ -101,6 +101,4 @@ interface StepRepository {
     // 🆕 Fresh HC Fetch (Bypass cache)
     suspend fun getFreshCurrentPeriodSteps(): Long
     
-    // 🆕 P3: Local DB Sync Status Update
-    suspend fun markSynced(trackId: String)
 }

@@ -2,6 +2,8 @@ package com.pace.legends.domain.manager
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -51,7 +53,9 @@ class StepSyncManager @Inject constructor(
     private val leagueRepository: com.pace.legends.domain.repository.LeagueRepository,
     // 🆕 GOD OBJECT FIX: Period hesaplama ayrı sınıfa delegasyon
     // 🆕 P3: Delegate to UseCase
-    private val syncStepsUseCase: com.pace.legends.domain.usecase.sync.SyncStepsUseCase
+    private val syncStepsUseCase: com.pace.legends.domain.usecase.sync.SyncStepsUseCase,
+    // 🆕 GOD OBJECT FIX: Delegated logic
+    private val periodCalculator: PeriodCalculator
 ) {
     
     // 🆕 Lig değişikliği eventi (UI kutlama için)
@@ -63,7 +67,46 @@ class StepSyncManager @Inject constructor(
     private val _leagueChangeEvents = kotlinx.coroutines.flow.MutableSharedFlow<LeagueChangeEvent>()
     val leagueChangeEvents: kotlinx.coroutines.flow.SharedFlow<LeagueChangeEvent> = _leagueChangeEvents
     
-    private val prefs: SharedPreferences = context.getSharedPreferences("step_sync", Context.MODE_PRIVATE)
+    // 🔐 SECURITY FIX: EncryptedSharedPreferences with Validation/Migration
+    private val prefs: SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+
+            val securePrefs = EncryptedSharedPreferences.create(
+                context,
+                "step_sync_secure",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+
+            // Migration: Check if legacy prefs exist and migrate
+            val legacyPrefs = context.getSharedPreferences("step_sync", Context.MODE_PRIVATE)
+            if (legacyPrefs.all.isNotEmpty()) {
+                android.util.Log.i("StepSync", "📦 Migrating legacy prefs to secure storage...")
+                val editor = securePrefs.edit()
+                legacyPrefs.all.forEach { (key, value) ->
+                    when (value) {
+                        is String -> editor.putString(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Float -> editor.putFloat(key, value)
+                    }
+                }
+                editor.apply()
+                legacyPrefs.edit().clear().apply() // Clear legacy
+                android.util.Log.i("StepSync", "✅ Migration complete.")
+            }
+            
+            securePrefs
+        } catch (e: Exception) {
+            android.util.Log.e("StepSync", "❌ Crypto init failed: ${e.message}. Fallback to legacy.")
+            context.getSharedPreferences("step_sync", Context.MODE_PRIVATE)
+        }
+    }
     
     // P0 FIX: Race condition önlemek için Mutex
     private val syncMutex = Mutex()
@@ -126,157 +169,10 @@ class StepSyncManager @Inject constructor(
      * - 2026-01-08 ~ 2026-01-14 = "period_1"
      */
     /**
-     * 🆕 Period Info Wrapper
+     * 🆕 Mevcut yarışma dönemini detaylı hesapla (Delegated to PeriodCalculator)
      */
-    data class PeriodInfo(
-        val periodId: String,           // "period_5"
-        val displayName: String,        // "Sevgililer Günü Sprintu"
-        val description: String,
-        val emoji: String,
-        val startDate: LocalDate,
-        val endDate: LocalDate,
-        val daysRemaining: Int,
-        val hoursRemaining: Int,
-        val remainingTimeDisplay: String, // 🆕 Formatted string
-        val isLastDay: Boolean,
-        val isExpired: Boolean
-    ) {
-        companion object {
-            fun empty() = PeriodInfo(
-                "", "", "", "", LocalDate.MIN, LocalDate.MIN, 0, 0, "", false, false
-            )
-        }
-    }
-
-    /**
-     * 🆕 Mevcut yarışma dönemini detaylı hesapla (Remote Config Tabanlı)
-     */
-    fun getCurrentPeriodInfo(): PeriodInfo {
-        return try {
-            val durationDays = remoteConfigManager.raceDurationDays.value
-            val startDateStr = remoteConfigManager.raceStartDate.value
-
-            // 🆕 OTOMATİK MOD: Eğer Remote Config "AUTO" dönerse, Takvim Ayını kullan
-            if (startDateStr.equals("AUTO", ignoreCase = true)) {
-                val now = LocalDate.now()
-                val yearMonth = YearMonth.from(now)
-                
-                val startDate = yearMonth.atDay(1)
-                val endDate = yearMonth.atEndOfMonth() // Ayın son gününü (28, 30, 31) otomatik bulur
-                
-                // Period ID: YYYY_MM (Örn: 2026_01) - Her ay benzersiz olur
-                val periodId = yearMonth.format(DateTimeFormatter.ofPattern("yyyy_MM"))
-                
-                // Kalan Süre Hesabı
-                val nowInstant = java.time.Instant.now()
-                val raceEndDateTime = endDate.atStartOfDay(java.time.ZoneId.systemDefault()).plusDays(1) // Bitiş: Ertesi ayın ilk anı
-                val duration = java.time.Duration.between(nowInstant, raceEndDateTime.toInstant())
-                
-                val totalHoursRemaining = duration.toHours()
-                val totalMinutesRemaining = duration.toMinutes()
-                
-                val displayText = when {
-                     totalMinutesRemaining <= 0L -> "Dönem Tamamlandı"
-                     totalHoursRemaining < 24 -> "${totalHoursRemaining} saat kaldı"
-                     else -> "${totalHoursRemaining / 24} gün kaldı"
-                }
-
-                return PeriodInfo(
-                    periodId = periodId,
-                    displayName = remoteConfigManager.raceDisplayName.value.ifEmpty { "${yearMonth.monthValue}. Dönem" },
-                    description = remoteConfigManager.raceDescription.value,
-                    emoji = remoteConfigManager.raceEmoji.value,
-                    startDate = startDate,
-                    endDate = endDate,
-                    daysRemaining = (totalHoursRemaining / 24).toInt(),
-                    hoursRemaining = (totalHoursRemaining % 24).toInt(),
-                    remainingTimeDisplay = displayText,
-                    isLastDay = totalHoursRemaining in 0L..23L,
-                    isExpired = totalMinutesRemaining <= 0L
-                )
-            }
-            
-            // Log if defaults are being used (Duration 30, Start 2026-01-01)
-            if (durationDays == RemoteConfigManager.DEFAULT_RACE_DURATION_DAYS && 
-                startDateStr == RemoteConfigManager.DEFAULT_RACE_START_DATE) {
-                android.util.Log.i("StepSync", "ℹ️ Using default race configuration (Remote Config might not be fetched yet)")
-            }
-
-            val displayName = remoteConfigManager.raceDisplayName.value
-            val description = remoteConfigManager.raceDescription.value
-            val emoji = remoteConfigManager.raceEmoji.value
-            
-            val startDate = LocalDate.parse(startDateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-            val today = LocalDate.now()
-            val now = java.time.ZonedDateTime.now() // Use ZonedDateTime for accuracy
-            
-            // 🔄 P1 FIX: Yarış henüz başlamadıysa özel durum döndür
-            if (today.isBefore(startDate)) {
-                val daysUntilStart = java.time.temporal.ChronoUnit.DAYS.between(today, startDate).toInt()
-                return PeriodInfo(
-                    periodId = "upcoming",
-                    displayName = "Yakında Başlıyor",
-                    description = description,
-                    emoji = "⏳",
-                    startDate = startDate,
-                    endDate = startDate.plusDays(durationDays.toLong()),
-                    daysRemaining = daysUntilStart,
-                    hoursRemaining = 0,
-                    remainingTimeDisplay = "$daysUntilStart gün sonra başlıyor",
-                    isLastDay = false,
-                    isExpired = false
-                )
-            }
-            
-            // Period hesaplama
-            val daysSinceStart = java.time.temporal.ChronoUnit.DAYS.between(startDate, today)
-            val periodNumber = (daysSinceStart / durationDays).toInt().coerceAtLeast(0)
-            
-            // Bu period'un başlangıç ve bitiş tarihleri
-            val periodStartDate = startDate.plusDays((periodNumber * durationDays).toLong())
-            val periodEndDate = periodStartDate.plusDays(durationDays.toLong())
-            
-            // P1 FIX: High Precision Remaining Time Calculation
-            val raceEndDateTime = periodEndDate.atStartOfDay(java.time.ZoneId.systemDefault())
-            val duration = java.time.Duration.between(now, raceEndDateTime)
-            val totalMinutesRemaining = duration.toMinutes()
-            val totalHoursRemaining = duration.toHours()
-            
-            val displayText = when {
-                totalMinutesRemaining <= 0 -> "Dönem bitti"
-                totalMinutesRemaining < 60 -> "$totalMinutesRemaining dakika kaldı"
-                totalHoursRemaining < 24 -> "$totalHoursRemaining saat kaldı"
-                else -> "${totalHoursRemaining / 24} gün kaldı"
-            }
-            
-            val daysRemaining = java.time.temporal.ChronoUnit.DAYS.between(today, periodEndDate).toInt()
-            val hoursRemaining = (totalHoursRemaining % 24).toInt()
-            
-            PeriodInfo(
-                periodId = "period_$periodNumber",
-                displayName = displayName,
-                description = description,
-                emoji = emoji,
-                startDate = periodStartDate,
-                endDate = periodEndDate,
-                daysRemaining = daysRemaining,
-                hoursRemaining = hoursRemaining,
-                remainingTimeDisplay = displayText,
-                isLastDay = totalHoursRemaining in 0..23,
-                isExpired = totalMinutesRemaining <= 0
-            )
-        } catch (e: Exception) {
-            // Fallback to strict monthly mode if everything else fails
-            android.util.Log.e("StepSync", "❌ Error calculating period info: ${e.message}")
-            val now = LocalDate.now()
-            PeriodInfo.empty().copy(
-                periodId = YearMonth.now().format(DateTimeFormatter.ofPattern("yyyy-MM")),
-                displayName = "Aylık Mod (Sistem Hatası)",
-                startDate = now.withDayOfMonth(1),
-                endDate = now.withDayOfMonth(1).plusMonths(1),
-                remainingTimeDisplay = "Hata"
-            )
-        }
+    fun getCurrentPeriodInfo(): com.pace.legends.domain.model.PeriodInfo {
+        return periodCalculator.getCurrentPeriodInfo()
     }
 
     /**
@@ -387,11 +283,12 @@ class StepSyncManager @Inject constructor(
 
         try {
             // 🆕 P0 FIX: Lig bilgisini ÖNCE al (processEndOfPeriod değiştirebilir)
-            val currentLeagueInfo = try {
-                leagueRepository.getUserLeagueInfo(userId)
-            } catch (e: Exception) {
-                android.util.Log.w("StepSync", "⚠️ Lig bilgisi alınamadı: ${e.message}")
-                null
+            // 🆕 P0 FIX: Lig bilgisini ÖNCE al (processEndOfPeriod değiştirebilir)
+            val currentLeagueInfoResult = leagueRepository.getUserLeagueInfo(userId)
+            val currentLeagueInfo = currentLeagueInfoResult.getOrNull()
+            
+            if (currentLeagueInfo == null) {
+                 android.util.Log.w("StepSync", "⚠️ Lig bilgisi alınamadı: ${currentLeagueInfoResult.exceptionOrNull()?.message}")
             }
             val currentLeagueTier = currentLeagueInfo?.tier?.name ?: "QUALIFYING"
             val currentLeagueId = currentLeagueInfo?.leagueId
@@ -446,7 +343,11 @@ class StepSyncManager @Inject constructor(
 
             // 🆕 ŞAMPİYONLUK ROZET KONTROLÜ
             if (myRank != null && myRank <= 3) {
-                awardChampionBadge(oldPeriodId, activeTrackId, myRank)
+                // Moved to BadgeManager (P5 Refactor)
+                val result = badgeManager.awardChampionBadge(oldPeriodId, activeTrackId, myRank)
+                if (result.isFailure) {
+                    android.util.Log.w("StepSync", "Failed to award champion badge: ${result.exceptionOrNull()?.message}")
+                }
             }
 
             // 🆕 KRİTİK: LİG YÜKSELME/DÜŞME İŞLEMİ
@@ -507,52 +408,7 @@ class StepSyncManager @Inject constructor(
     /**
      * 🆕 Şampiyonluk Rozeti Ver
      */
-    private suspend fun awardChampionBadge(periodId: String, trackId: String, rank: Int) {
-        val userId = authRepository.getCurrentUserId() ?: return
-        
-        try {
-            // Get period display name from saved prefs or generate
-            val periodDisplayName = prefs.getString("period_display_name", null) ?: "Dönem $periodId"
-            
-            val track = trackRepository.getTrack(trackId)
-            val trackName = track?.genericName?.get("tr") ?: track?.genericName?.get("en") ?: trackId
-            
-            val badgeId = "${periodId}_${trackId}_rank_$rank"
-            
-            val badge = mapOf(
-                "badgeId" to badgeId,
-                "periodId" to periodId,
-                "periodDisplayName" to periodDisplayName,
-                "trackId" to trackId,
-                "trackDisplayName" to trackName,
-                "rank" to rank,
-                "earnedAt" to System.currentTimeMillis()
-            )
-            
-            firestore
-                .collection("users")
-                .document(userId)
-                .collection("championBadges")
-                .document(badgeId)
-                .set(badge)
-                .await()
-            
-            // Save to local Room DB as well for offline access
-            val badgeType = if (rank == 1) {
-                com.pace.legends.domain.model.BadgeType.PERIOD_CHAMPION
-            } else {
-                com.pace.legends.domain.model.BadgeType.PODIUM_FINISH
-            }
-            
-            // Emit UI event for snackbar/notification
-            badgeManager.emitChampionBadge(badgeType, trackName, rank)
-            
-            android.util.Log.d("StepSync", "🏆 Champion Badge Awarded! Track: $trackName, Rank: $rank")
 
-        } catch (e: Exception) {
-            android.util.Log.e("StepSync", "❌ Failed to award champion badge: ${e.message}")
-        }
-    }
     
     /**
      * Ay değişimi kontrolü - Eski (Backward compatibility)
@@ -570,53 +426,7 @@ class StepSyncManager @Inject constructor(
         return (currentSensorValue - offset).coerceAtLeast(0)
     }
     
-    /**
-     * Throttled sync kontrolü
-     * P0 FIX: Mutex ile atomik kontrol ve güncelleme
-     * @return true if sync was performed
-     */
-    suspend fun syncIfNeeded(
-        monthlySteps: Long,
-        activeTrackId: String?,
-        force: Boolean = false
-    ): Boolean = syncMutex.withLock {
-        val userId = authRepository.getCurrentUserId()
-        if (userId == null) {
-            android.util.Log.w("StepSync", "❌ Sync skipped: No user ID")
-            return@withLock false
-        }
-        if (activeTrackId == null) {
-            android.util.Log.w("StepSync", "❌ Sync skipped: No active track")
-            return@withLock false
-        }
-        
-        val now = System.currentTimeMillis()
-        val stepDelta = monthlySteps - lastSyncedSteps
-        val timeDelta = now - lastSyncTime
-        
-        // 🆕 Adaptive Throttling: Eşik Remote Config'den okunuyor (Maliyet optimizasyonu)
-        val dynamicMilestone = remoteConfigManager.getStepSyncMilestone()
-        
-        val shouldSync = force ||
-            stepDelta >= dynamicMilestone ||
-            timeDelta >= SYNC_INTERVAL_MS
-        
-        if (!shouldSync) {
-            // 🐛 DEBUG: Log every check (verbose mode for testing)
-            android.util.Log.d("StepSync", "⏸️ Sync throttled: delta=$stepDelta (need $dynamicMilestone), time=${timeDelta/1000}s (need ${SYNC_INTERVAL_MS/1000}s)")
-            return@withLock false
-        }
-        
-        android.util.Log.d("StepSync", "🚀 Triggering sync: $monthlySteps steps to $activeTrackId")
-        
-        // 🛡️ ANTI-CHEAT: Speed Limit Check (25 km/h)
-        if (checkSpeedViolation(stepDelta, timeDelta)) {
-            android.util.Log.w("StepSync", "🚨 SPEED VIOLATION DETECTED! Sync rejected.")
-            logSpeedCheatAttempt(userId, stepDelta, timeDelta)
-            // Revert local state to match last sync? Or just skip sync.
-            // For now, skipping sync is safer to avoid looping.
-            return@withLock false
-        }
+
 
     
     /**

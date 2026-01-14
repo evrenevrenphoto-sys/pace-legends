@@ -1,6 +1,6 @@
 package com.pace.legends.ui.stats
 
-import com.pace.legends.domain.manager.StepSyncManager
+import com.pace.legends.domain.model.PeriodInfo
 import com.pace.legends.domain.model.PeriodHistory
 import com.pace.legends.domain.repository.AllTimeStats
 
@@ -16,7 +16,7 @@ data class GlobalStatsUiState(
     val errorMessage: String? = null,
     
     // Period Info
-    val periodInfo: StepSyncManager.PeriodInfo = StepSyncManager.PeriodInfo.empty(),
+    val periodInfo: PeriodInfo = PeriodInfo.empty(),
     
     // Current Race Stats
     val currentRace: CurrentRaceStats = CurrentRaceStats(),

@@ -44,8 +44,9 @@ class StepRepositoryTest {
         
         assertFalse("Steps should NOT be added when trackId is null", stepsAdded)
         
-        // Now with active track
-        trackId = "track_A"
+        
+        assertFalse("Steps should NOT be added when trackId is null", stepsAdded)
+        
         // Now with active track
         trackId = "track_A"
         // Simulate addSteps logic with non-null track

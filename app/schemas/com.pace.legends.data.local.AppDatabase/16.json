@@ -1,0 +1,604 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 16,
+    "identityHash": "f48ff3db6b6690069c81a0de8c309076",
+    "entities": [
+      {
+        "tableName": "tracks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `genericName` TEXT NOT NULL, `description` TEXT NOT NULL, `geoJsonUrl` TEXT NOT NULL, `totalDistanceMeters` INTEGER NOT NULL, `isActive` INTEGER NOT NULL, `isPremium` INTEGER NOT NULL, `recordTimeSeconds` INTEGER NOT NULL, `version` INTEGER NOT NULL, `reverseDirection` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "genericName",
+            "columnName": "genericName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geoJsonUrl",
+            "columnName": "geoJsonUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceMeters",
+            "columnName": "totalDistanceMeters",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "isActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPremium",
+            "columnName": "isPremium",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordTimeSeconds",
+            "columnName": "recordTimeSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reverseDirection",
+            "columnName": "reverseDirection",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "user_progress",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` TEXT NOT NULL, `userId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `totalSteps` INTEGER NOT NULL, `completedLoops` INTEGER NOT NULL, `totalActiveTimeMillis` INTEGER NOT NULL, `lastUpdateTimestamp` INTEGER NOT NULL, `bestLapTimeSeconds` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, `lastSyncedTimestamp` INTEGER NOT NULL, `totalDistanceWalked` REAL NOT NULL, `currentLapStartTime` INTEGER NOT NULL, `periodStartTime` INTEGER NOT NULL, `currentLapNumber` INTEGER NOT NULL, `allTimeSteps` INTEGER NOT NULL, `allTimeLaps` INTEGER NOT NULL, `allTimeDistanceMeters` REAL NOT NULL, PRIMARY KEY(`userId`, `trackId`))",
+        "fields": [
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedLoops",
+            "columnName": "completedLoops",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalActiveTimeMillis",
+            "columnName": "totalActiveTimeMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdateTimestamp",
+            "columnName": "lastUpdateTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bestLapTimeSeconds",
+            "columnName": "bestLapTimeSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSynced",
+            "columnName": "isSynced",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedTimestamp",
+            "columnName": "lastSyncedTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalDistanceWalked",
+            "columnName": "totalDistanceWalked",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentLapStartTime",
+            "columnName": "currentLapStartTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodStartTime",
+            "columnName": "periodStartTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentLapNumber",
+            "columnName": "currentLapNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allTimeSteps",
+            "columnName": "allTimeSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allTimeLaps",
+            "columnName": "allTimeLaps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allTimeDistanceMeters",
+            "columnName": "allTimeDistanceMeters",
+            "affinity": "REAL",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "userId",
+            "trackId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_user_progress_isSynced",
+            "unique": false,
+            "columnNames": [
+              "isSynced"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_progress_isSynced` ON `${TABLE_NAME}` (`isSynced`)"
+          },
+          {
+            "name": "index_user_progress_trackId",
+            "unique": false,
+            "columnNames": [
+              "trackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_user_progress_trackId` ON `${TABLE_NAME}` (`trackId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "user_badges",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`badgeId` TEXT NOT NULL, `earnedTimestamp` INTEGER NOT NULL, PRIMARY KEY(`badgeId`))",
+        "fields": [
+          {
+            "fieldPath": "badgeId",
+            "columnName": "badgeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "earnedTimestamp",
+            "columnName": "earnedTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "badgeId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "lap_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `trackId` TEXT NOT NULL, `userId` TEXT NOT NULL, `startTime` INTEGER NOT NULL, `endTime` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, `totalSteps` INTEGER NOT NULL, `lapNumber` INTEGER NOT NULL, `periodId` TEXT NOT NULL, FOREIGN KEY(`userId`, `trackId`) REFERENCES `user_progress`(`userId`, `trackId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startTime",
+            "columnName": "startTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endTime",
+            "columnName": "endTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lapNumber",
+            "columnName": "lapNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodId",
+            "columnName": "periodId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_lap_history_userId_trackId",
+            "unique": false,
+            "columnNames": [
+              "userId",
+              "trackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lap_history_userId_trackId` ON `${TABLE_NAME}` (`userId`, `trackId`)"
+          },
+          {
+            "name": "index_lap_history_endTime",
+            "unique": false,
+            "columnNames": [
+              "endTime"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_lap_history_endTime` ON `${TABLE_NAME}` (`endTime`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "user_progress",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "userId",
+              "trackId"
+            ],
+            "referencedColumns": [
+              "userId",
+              "trackId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "daily_step_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epochDay` INTEGER NOT NULL, `trackId` TEXT NOT NULL, `userId` TEXT NOT NULL, `steps` INTEGER NOT NULL, `distance` REAL NOT NULL, `dateString` TEXT NOT NULL, PRIMARY KEY(`epochDay`, `trackId`, `userId`), FOREIGN KEY(`userId`, `trackId`) REFERENCES `user_progress`(`userId`, `trackId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "epochDay",
+            "columnName": "epochDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "steps",
+            "columnName": "steps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "distance",
+            "columnName": "distance",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dateString",
+            "columnName": "dateString",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "epochDay",
+            "trackId",
+            "userId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_daily_step_log_userId_trackId",
+            "unique": false,
+            "columnNames": [
+              "userId",
+              "trackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_daily_step_log_userId_trackId` ON `${TABLE_NAME}` (`userId`, `trackId`)"
+          },
+          {
+            "name": "index_daily_step_log_epochDay",
+            "unique": false,
+            "columnNames": [
+              "epochDay"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_daily_step_log_epochDay` ON `${TABLE_NAME}` (`epochDay`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "user_progress",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "userId",
+              "trackId"
+            ],
+            "referencedColumns": [
+              "userId",
+              "trackId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "period_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`periodId` TEXT NOT NULL, `userId` TEXT NOT NULL, `trackId` TEXT NOT NULL, `displayName` TEXT, `startTimestamp` INTEGER NOT NULL, `endTimestamp` INTEGER NOT NULL, `totalSteps` INTEGER NOT NULL, `completedLaps` INTEGER NOT NULL, `bestLapTimeSeconds` INTEGER NOT NULL, `finalRank` INTEGER, `totalParticipants` INTEGER, `archivedAt` INTEGER NOT NULL, PRIMARY KEY(`periodId`, `userId`, `trackId`))",
+        "fields": [
+          {
+            "fieldPath": "periodId",
+            "columnName": "periodId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "startTimestamp",
+            "columnName": "startTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endTimestamp",
+            "columnName": "endTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalSteps",
+            "columnName": "totalSteps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedLaps",
+            "columnName": "completedLaps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bestLapTimeSeconds",
+            "columnName": "bestLapTimeSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finalRank",
+            "columnName": "finalRank",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "totalParticipants",
+            "columnName": "totalParticipants",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "archivedAt",
+            "columnName": "archivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "periodId",
+            "userId",
+            "trackId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_period_history_userId",
+            "unique": false,
+            "columnNames": [
+              "userId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_period_history_userId` ON `${TABLE_NAME}` (`userId`)"
+          },
+          {
+            "name": "index_period_history_userId_trackId",
+            "unique": false,
+            "columnNames": [
+              "userId",
+              "trackId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_period_history_userId_trackId` ON `${TABLE_NAME}` (`userId`, `trackId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "leaderboard_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trackId` TEXT NOT NULL, `periodId` TEXT NOT NULL, `userId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `steps` INTEGER NOT NULL, `rank` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, PRIMARY KEY(`trackId`, `periodId`, `userId`))",
+        "fields": [
+          {
+            "fieldPath": "trackId",
+            "columnName": "trackId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodId",
+            "columnName": "periodId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "steps",
+            "columnName": "steps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rank",
+            "columnName": "rank",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "trackId",
+            "periodId",
+            "userId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'f48ff3db6b6690069c81a0de8c309076')"
+    ]
+  }
+}

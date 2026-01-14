@@ -17,7 +17,32 @@ class FirebaseTrackRepository @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : TrackRepository {
 
-    override suspend fun getTracks(): List<Track> {
+    private val prefs = context.getSharedPreferences("pace_legends_tracks", android.content.Context.MODE_PRIVATE)
+    private val CACHE_KEY_TRACKS = "track_list_cache"
+    private val CACHE_KEY_TIMESTAMP = "track_list_timestamp"
+    private val CACHE_TTL = 24 * 60 * 60 * 1000L // 24 Hours
+
+    override suspend fun getTracks(): Result<List<Track>> {
+        val now = System.currentTimeMillis()
+        
+        // 1. Check Cache
+        val cachedJson = prefs.getString(CACHE_KEY_TRACKS, null)
+        val cachedTimestamp = prefs.getLong(CACHE_KEY_TIMESTAMP, 0L)
+        
+        if (cachedJson != null && (now - cachedTimestamp) < CACHE_TTL) {
+            try {
+                val type = object : TypeToken<List<Track>>() {}.type
+                val cachedTracks: List<Track> = gson.fromJson(cachedJson, type)
+                if (cachedTracks.isNotEmpty()) {
+                    android.util.Log.d("TrackRepo", "✅ Loaded tracks from cache")
+                    return Result.success(cachedTracks)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TrackRepo", "❌ Cache parse failed: ${e.message}")
+            }
+        }
+
+        // 2. Fetch from Network (Remote Config)
         return try {
             // Fetch remote config with timeout (5 seconds)
             kotlinx.coroutines.withTimeout(5000L) {
@@ -28,14 +53,13 @@ class FirebaseTrackRepository @Inject constructor(
             
             if (json.isBlank()) {
                 println("Remote Config 'track_config_v1' is empty. Using defaults.")
-                return getDefaultTracks()
+                return Result.success(getDefaultTracks())
             }
 
             val type = object : TypeToken<List<Track>>() {}.type
             val tracks: List<Track> = gson.fromJson(json, type)
             
             // P4 FIX: Telif Hakları için İsim Düzenlemesi (Sanitization)
-            // Remote Config'den eski isimler gelse bile yerel güvenli isimlerle değiştir.
             val safeNameMapping = mapOf(
                 "istanbul_park" to mapOf("tr" to "Boğaziçi Pisti", "en" to "Bosphorus Circuit"),
                 "spa" to mapOf("tr" to "Orman Pisti", "en" to "Forest Apex"),
@@ -47,20 +71,41 @@ class FirebaseTrackRepository @Inject constructor(
                 "baku" to mapOf("tr" to "Kale Pisti", "en" to "Castle Circuit")
             )
             
-            return tracks.map { track ->
+            val sanitizedTracks = tracks.map { track ->
                 safeNameMapping[track.id]?.let { safeName ->
                     track.copy(genericName = safeName)
                 } ?: track
             }
+            
+            // 3. Update Cache
+            if (sanitizedTracks.isNotEmpty()) {
+                val sanitizedJson = gson.toJson(sanitizedTracks)
+                prefs.edit()
+                    .putString(CACHE_KEY_TRACKS, sanitizedJson)
+                    .putLong(CACHE_KEY_TIMESTAMP, now)
+                    .apply()
+                android.util.Log.d("TrackRepo", "💾 Tracks cached successfully")
+            }
+            
+            Result.success(sanitizedTracks)
         } catch (e: Exception) {
             e.printStackTrace()
-            // Fallback to defaults on error or timeout
-            getDefaultTracks()
+            // Fallback to cache if network fails, even if expired (Better than failure)
+            if (cachedJson != null) {
+                 android.util.Log.w("TrackRepo", "⚠️ Network failed, using expired cache")
+                 val type = object : TypeToken<List<Track>>() {}.type
+                 val cachedTracks: List<Track> = gson.fromJson(cachedJson, type)
+                 return Result.success(cachedTracks)
+            }
+            
+            Result.failure(e)
         }
     }
 
-    override suspend fun getTrack(trackId: String): Track? {
-        return getTracks().find { it.id == trackId }
+    override suspend fun getTrack(trackId: String): Result<Track?> {
+        return getTracks().map { tracks -> 
+            tracks.find { it.id == trackId }
+        }
     }
 
     override fun prepareTrackFile(track: Track): kotlinx.coroutines.flow.Flow<com.pace.legends.domain.model.DownloadState> = kotlinx.coroutines.flow.flow {

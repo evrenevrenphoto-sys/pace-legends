@@ -1,0 +1,30 @@
+name: Firestore Rules Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  rules-test:
+    name: Firestore Rules Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: tools/firestore-tests
+        run: npm ci --silent || npm install --no-audit --no-fund
+
+      - name: Run Firestore rules tests
+        working-directory: tools/firestore-tests
+        env:
+          CI: true
+        run: npm test

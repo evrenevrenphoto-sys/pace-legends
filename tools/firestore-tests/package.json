@@ -1,0 +1,11 @@
+{
+  "name": "pace-legends-firestore-tests",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0"
+  },
+  "scripts": {
+    "test": "npx firebase emulators:exec \"node testAntiCheatRules.js\""
+  }
+}

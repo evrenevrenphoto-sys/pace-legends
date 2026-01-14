@@ -35,7 +35,7 @@ class FirebaseLeagueRepository @Inject constructor(
     private val leagueSize: Int
         get() = remoteConfigManager.leagueSize.value
 
-    override suspend fun getUserLeagueInfo(userId: String): UserLeagueInfo {
+    override suspend fun getUserLeagueInfo(userId: String): Result<UserLeagueInfo> {
         return try {
             val userDoc = firestore.collection("users")
                 .document(userId)
@@ -45,13 +45,14 @@ class FirebaseLeagueRepository @Inject constructor(
             val tierString = userDoc.getString("leagueTier") ?: "QUALIFYING"
             val leagueId = userDoc.getString("leagueId")
             
-            UserLeagueInfo(
+            val info = UserLeagueInfo(
                 tier = LeagueTier.fromString(tierString),
                 leagueId = leagueId
             )
+            Result.success(info)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "getUserLeagueInfo failed: ${e.message}")
-            UserLeagueInfo() // Default: QUALIFYING
+            Result.failure(e)
         }
     }
 
@@ -65,7 +66,7 @@ class FirebaseLeagueRepository @Inject constructor(
         limit: Int,
         lastSteps: Long?,
         lastUserId: String?
-    ): List<LeaderboardEntry> {
+    ): Result<List<LeaderboardEntry>> {
         return try {
             var query = firestore
                 .collection("qualifying")
@@ -81,7 +82,7 @@ class FirebaseLeagueRepository @Inject constructor(
             
             val result = query.get().await()
             
-            result.documents.map { doc ->
+            val entries = result.documents.map { doc ->
                 LeaderboardEntry(
                     userId = doc.getString("userId") ?: "",
                     displayName = doc.getString("displayName") ?: "Racer",
@@ -89,9 +90,10 @@ class FirebaseLeagueRepository @Inject constructor(
                     rank = 0 // UI should calculate rank based on position + offset
                 )
             }
+            Result.success(entries)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "getQualifyingPoolLeaderboard failed: ${e.message}")
-            emptyList()
+            Result.failure(e)
         }
     }
 
@@ -119,7 +121,7 @@ class FirebaseLeagueRepository @Inject constructor(
         limit: Int,
         lastSteps: Long?,
         lastUserId: String?
-    ): List<LeaderboardEntry> {
+    ): Result<List<LeaderboardEntry>> {
         return try {
             var query = firestore
                 .collection("leagues")
@@ -135,13 +137,8 @@ class FirebaseLeagueRepository @Inject constructor(
                 
             val result = query.get().await()
             
-            // Rank calculation needs to be relative if paging, 
-            // but for UI simplicity we might just append.
-            // Absolute rank is hard in NoSQL pagination without reading previous docs.
-            // Client side usually handles 'row number'.
-            
             var localRankCounter = 0
-            result.documents.map { doc ->
+            val entries = result.documents.map { doc ->
                 localRankCounter++
                 LeaderboardEntry(
                     userId = doc.getString("userId") ?: "",
@@ -150,9 +147,10 @@ class FirebaseLeagueRepository @Inject constructor(
                     rank = 0 // Rank handled by UI or separate count query
                 )
             }
+            Result.success(entries)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "getLeagueLeaderboard failed: ${e.message} (Check Indexes!)")
-            emptyList()
+            Result.failure(e)
         }
     }
 
@@ -160,8 +158,8 @@ class FirebaseLeagueRepository @Inject constructor(
         userId: String, 
         newTier: LeagueTier, 
         newLeagueId: String?
-    ) {
-        try {
+    ): Result<Unit> {
+        return try {
             firestore.collection("users")
                 .document(userId)
                 .set(mapOf(
@@ -171,12 +169,14 @@ class FirebaseLeagueRepository @Inject constructor(
                 .await()
             
             android.util.Log.d(TAG, "✅ Updated user league: $userId -> ${newTier.name}")
+            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "updateUserLeague failed: ${e.message}")
+            Result.failure(e)
         }
     }
 
-    override suspend fun findAvailableLeague(tier: LeagueTier, trackId: String, maxMembers: Int): String? {
+    override suspend fun findAvailableLeague(tier: LeagueTier, trackId: String, maxMembers: Int): Result<String?> {
         return try {
             val result = firestore
                 .collection("leagues")
@@ -187,14 +187,14 @@ class FirebaseLeagueRepository @Inject constructor(
                 .get()
                 .await()
             
-            result.documents.firstOrNull()?.id
+            Result.success(result.documents.firstOrNull()?.id)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "findAvailableLeague failed: ${e.message}")
-            null
+            Result.failure(e)
         }
     }
 
-    override suspend fun createLeague(tier: LeagueTier, trackId: String): String {
+    override suspend fun createLeague(tier: LeagueTier, trackId: String): Result<String> {
         return try {
             val leagueRef = firestore.collection("leagues").document()
             
@@ -206,10 +206,10 @@ class FirebaseLeagueRepository @Inject constructor(
             )).await()
             
             android.util.Log.d(TAG, "✅ Created new league: ${leagueRef.id}")
-            leagueRef.id
+            Result.success(leagueRef.id)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "createLeague failed: ${e.message}")
-            throw e
+            Result.failure(e)
         }
     }
     
@@ -217,8 +217,8 @@ class FirebaseLeagueRepository @Inject constructor(
      * 🆕 Kullanıcıyı lig üyesi olarak ekle ve memberCount'u artır
      * BUG #2 ve BUG #3 düzeltmesi
      */
-    override suspend fun addUserToLeague(userId: String, leagueId: String, displayName: String) {
-        try {
+    override suspend fun addUserToLeague(userId: String, leagueId: String, displayName: String): Result<Unit> {
+        return try {
             val batch = firestore.batch()
             
             // 1. leagues/{leagueId}/members/{userId} oluştur
@@ -242,14 +242,16 @@ class FirebaseLeagueRepository @Inject constructor(
             batch.commit().await()
             
             android.util.Log.d(TAG, "✅ Added user $userId to league $leagueId and incremented memberCount")
+            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "addUserToLeague failed: ${e.message}")
+            Result.failure(e)
         }
     }
 
 
 
-    override suspend fun getUserLeagueRank(userId: String, leagueId: String): Int {
+    override suspend fun getUserLeagueRank(userId: String, leagueId: String): Result<Int> {
         return try {
             val userDoc = firestore
                 .collection("leagues")
@@ -270,10 +272,10 @@ class FirebaseLeagueRepository @Inject constructor(
                 .await()
                 .size()
             
-            higherCount + 1
+            Result.success(higherCount + 1)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "getUserLeagueRank failed: ${e.message}")
-            0
+            Result.failure(e)
         }
     }
     override suspend fun getUserQualifyingRank(userId: String, trackId: String, periodId: String): Int {
@@ -307,8 +309,8 @@ class FirebaseLeagueRepository @Inject constructor(
     /**
      * 🆕 Kullanıcıyı ligden çıkar ve memberCount'u azalt
      */
-    override suspend fun removeUserFromLeague(userId: String, leagueId: String) {
-        try {
+    override suspend fun removeUserFromLeague(userId: String, leagueId: String): Result<Unit> {
+        return try {
             val batch = firestore.batch()
             
             // 1. leagues/{leagueId}/members/{userId} sil
@@ -327,8 +329,10 @@ class FirebaseLeagueRepository @Inject constructor(
             batch.commit().await()
             
             android.util.Log.d(TAG, "✅ Removed user $userId from league $leagueId and decremented memberCount")
+            Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "removeUserFromLeague failed: ${e.message}")
+            Result.failure(e)
         }
     }
 }

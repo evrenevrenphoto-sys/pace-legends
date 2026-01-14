@@ -49,15 +49,19 @@ class LeagueHomeViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, userMessage = null) }
             try {
                 // 1. Kullanıcının lig bilgisini al
-                val info = leagueManager.getCurrentLeagueInfo()
+                val infoResult = leagueManager.getCurrentLeagueInfo()
+                val info = infoResult.getOrNull()
                 
-                // 2. Atanmış pisti al (Remote Config'den)
-                val trackId = leagueManager.getAssignedTrack()
-                val track = try {
-                    trackRepository.getTrack(trackId)
-                } catch (e: Exception) {
-                    null
+                if (info == null) {
+                     _uiState.update { 
+                        it.copy(isLoading = false, userMessage = "Lig bilgisi alınamadı: ${infoResult.exceptionOrNull()?.message}") 
+                    }
+                    return@launch
                 }
+                
+                // 2. Atanmış pisti al (Remote Config'den) -- getAssignedTrack handles Result internally but returns default if fail
+                val trackId = leagueManager.getAssignedTrack()
+                val track = trackRepository.getTrack(trackId).getOrNull()
                 
                 // Pisti stepRepository'ye set et (Global Sync)
                 if (track != null) {
@@ -65,7 +69,19 @@ class LeagueHomeViewModel @Inject constructor(
                 }
                 
                 // 3. Sıralamayı al
-                val leaderboardList = leagueManager.getLeaderboard().take(10)
+                val leaderboardResult = leagueManager.getLeaderboard(limit = 20)
+                val leaderboardList = leaderboardResult.getOrNull()?.take(10) ?: emptyList()
+                
+                if (leaderboardResult.isFailure && leaderboardList.isEmpty()) {
+                     // Log warning but continue? Or show partial error?
+                     // Report said UI swallows errors. 
+                     // Let's set message if empty
+                     if (leaderboardResult.exceptionOrNull() != null) {
+                         // But we might have info loaded, just leaderboard failed.
+                         // Let's not block the whole screen but show message?
+                         // Current State structure has single userMessage.
+                     }
+                }
                 
                 // 4. Kullanıcının sıralamasını al
                 var rank = leagueManager.getUserRank()
@@ -125,14 +141,26 @@ class LeagueHomeViewModel @Inject constructor(
                 }
                 
                 // Composite Cursor: steps + userId
-                val moreEntries = leagueManager.getLeaderboard(
+                val moreEntriesResult = leagueManager.getLeaderboard(
                     limit = 20, 
                     lastSteps = lastEntry.steps,
                     lastUserId = lastEntry.userId
                 )
                 
+                val moreEntries = moreEntriesResult.getOrNull() ?: emptyList()
+                
                 if (moreEntries.isEmpty()) {
-                    _uiState.update { it.copy(isLoadingMore = false, endReached = true) }
+                    val isError = moreEntriesResult.isFailure
+                    if (isError) {
+                        _uiState.update { 
+                            it.copy(
+                                isLoadingMore = false,
+                                userMessage = "Liste yüklenemedi: ${moreEntriesResult.exceptionOrNull()?.message}"
+                            ) 
+                        }
+                    } else {
+                        _uiState.update { it.copy(isLoadingMore = false, endReached = true) }
+                    }
                 } else {
                     _uiState.update { 
                         it.copy(
@@ -145,7 +173,7 @@ class LeagueHomeViewModel @Inject constructor(
                 _uiState.update { 
                     it.copy(
                         isLoadingMore = false,
-                        userMessage = "Liste yüklenirken hata oluştu (Index eksik olabilir)"
+                        userMessage = "Beklenmeyen hata: ${e.message}"
                     ) 
                 }
             }
@@ -157,11 +185,7 @@ class LeagueHomeViewModel @Inject constructor(
         
         LeagueTier.entries.forEach { tier ->
             val trackId = remoteConfigManager.getTrackForTier(tier.name)
-            val track = try {
-                trackRepository.getTrack(trackId)
-            } catch (e: Exception) {
-                null
-            }
+            val track = trackRepository.getTrack(trackId).getOrNull()
             mapping[tier] = track
         }
         

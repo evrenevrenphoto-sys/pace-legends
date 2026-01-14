@@ -34,15 +34,23 @@ class StepSyncManagerTest {
     private lateinit var badgeManager: BadgeManager
     private lateinit var leagueManager: LeagueManager
     private lateinit var leagueRepository: LeagueRepository
+    private lateinit var periodCalculator: PeriodCalculator
     
     private lateinit var stepSyncManager: StepSyncManager
 
     private lateinit var raceLocationManager: RaceLocationManager
     private lateinit var externalScope: kotlinx.coroutines.CoroutineScope
-    private lateinit var periodCalculator: PeriodCalculator
+    private lateinit var syncStepsUseCase: com.pace.legends.domain.usecase.sync.SyncStepsUseCase
 
     @Before
     fun setup() {
+        mockkStatic(android.util.Log::class)
+        every { android.util.Log.d(any(), any()) } returns 0
+        every { android.util.Log.i(any(), any()) } returns 0
+        every { android.util.Log.w(any(), any<String>()) } returns 0
+        every { android.util.Log.e(any(), any()) } returns 0
+        every { android.util.Log.v(any(), any()) } returns 0
+
         authRepository = mockk(relaxed = true)
         dailyStepLogDao = mockk(relaxed = true)
         appDatabase = mockk(relaxed = true)
@@ -62,6 +70,7 @@ class StepSyncManagerTest {
         leagueManager = mockk(relaxed = true)
         leagueRepository = mockk(relaxed = true)
         periodCalculator = mockk(relaxed = true)
+        syncStepsUseCase = mockk(relaxed = true)
         
         // 🆕 P2 FIX: Constructor injection ile tüm bağımlılıklar enjekte edildi
         stepSyncManager = StepSyncManager(
@@ -79,40 +88,23 @@ class StepSyncManagerTest {
             badgeManager,
             dagger.Lazy { leagueManager },
             leagueRepository,
-            periodCalculator
+            syncStepsUseCase
         )
     }
 
     @Test
-    fun `syncIfNeeded should return false if throttle time not passed`() = runBlocking {
+    fun `syncIfNeeded should delegate to syncStepsUseCase`() = runBlocking {
         // Arrange
-        val stepDelta = 100L
-        val now = 1000L
-        // TODO: This requires deeper mocking of internal state or passing lastSyncTime as param. 
-        // For now, testing the Anti-Cheat trigger is more priority as per P0/P1.
-    }
+        val monthlySteps = 1000L
+        val activeTrackId = "track_1"
+        val force = true
+        
+        coEvery { syncStepsUseCase(any(), any(), any()) } returns com.pace.legends.domain.usecase.sync.SyncResult.Success(100L)
 
+        // Act
+        stepSyncManager.syncIfNeeded(monthlySteps, activeTrackId, force)
 
-
-    @Test
-    fun `Anti-Cheat should trigger logCheatAttempt cloud function on speed violation`() = runBlocking {
-        // Arrange
-        val userId = "testUser"
-        val hugeSteps = 10000L // 10k steps
-        val shortTimeMs = 5000L // 5 seconds (Impossible speed)
-        
-        val callableMock = mockk<HttpsCallableReference>(relaxed = true)
-        val taskMock = mockk<Task<HttpsCallableResult>>(relaxed = true)
-        
-        every { functions.getHttpsCallable("logCheatAttempt") } returns callableMock
-        every { callableMock.call(any()) } returns taskMock
-        
-        // This test assumes checkSpeedViolation is accessible or we can trigger it via sync
-        // Since checkSpeedViolation is private, we test the public entry point syncIfNeeded
-        // ...
-        
-        // Due to complexity of setting up private state, logic verification:
-        // Speed = (10000 * 0.762) / 5 = 1524 m/s => 5486 km/h (Way above 25 km/h)
-        // Should trigger cloud function
+        // Assert
+        coVerify { syncStepsUseCase(monthlySteps, activeTrackId, force) }
     }
 }

@@ -127,20 +127,50 @@ service cloud.firestore {
     }
     
     // ============================================================
-    // �️ ANTI-CHEAT LOGS (Append-Only)
+    // ️ ANTI-CHEAT LOGS (Append-Only) - STRICT VALIDATION
     // ============================================================
     match /antiCheatLogs/{logId} {
-      // Read: Admin only
-      allow read: if isAdmin();
-      
-      // Create: Authenticated users can log their own violations
+      // Read: Admins or the user who owns the log
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
+
+      // Create: Authenticated users can log their own violations with strict validation
       allow create: if isAuthenticated()
                     && request.resource.data.userId == request.auth.uid
-                    && request.resource.data.keys().hasAll(['userId', 'type', 'timestamp'])
-                    && request.resource.data.timestamp == request.time;
-      
-      // 🔒 APPEND-ONLY: No modifications
+                    // Required fields presence
+                    && request.resource.data.keys().hasAll(['userId', 'type', 'violations', 'suspicionScore'])
+                    // Required fields & type checks
+                    && request.resource.data.userId is string
+                    && request.resource.data.type is string
+                    && request.resource.data.violations is list
+                    && request.resource.data.suspicionScore is number
+                    // Field ranges
+                    && request.resource.data.violations.size() <= 5
+                    && request.resource.data.suspicionScore >= 0
+                    && request.resource.data.suspicionScore <= 100
+                    // Timestamp type & future check (optional - if provided must be timestamp and not in future)
+                    && ( !('timestamp' in request.resource.data) || (request.resource.data.timestamp is timestamp && request.resource.data.timestamp <= request.time) )
+                    // Optional numeric fields (guarded)
+                    && (
+                         !('stepDelta' in request.resource.data) 
+                         || (request.resource.data.stepDelta is number && request.resource.data.stepDelta >= 0 && request.resource.data.stepDelta <= 5000)
+                       )
+                    // Rate limiting via per-user meta document: allow if no recent log or last log older than 1 hour
+                    && (
+                         !exists(/databases/$(database)/documents/antiCheatMeta/$(request.auth.uid))
+                         || get(/databases/$(database)/documents/antiCheatMeta/$(request.auth.uid)).data.lastLogAt == null
+                         || request.time > (get(/databases/$(database)/documents/antiCheatMeta/$(request.auth.uid)).data.lastLogAt + duration.value(1, 'h'))
+                       );
+
+      // 🔒 APPEND-ONLY: No modifications from clients
       allow update, delete: if false;
+    }
+
+    // Per-user anti-cheat metadata (managed by Cloud Functions)
+    match /antiCheatMeta/{userId} {
+      // Read: Admins or owner
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      // Writes: ONLY Cloud Functions (admin) should update the lastLogAt value
+      allow create, update, delete: if isAdmin();
     }
     
     // ============================================================
