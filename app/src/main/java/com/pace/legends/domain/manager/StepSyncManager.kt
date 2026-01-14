@@ -50,7 +50,8 @@ class StepSyncManager @Inject constructor(
     private val leagueManagerLazy: dagger.Lazy<LeagueManager>,
     private val leagueRepository: com.pace.legends.domain.repository.LeagueRepository,
     // 🆕 GOD OBJECT FIX: Period hesaplama ayrı sınıfa delegasyon
-    private val periodCalculator: PeriodCalculator
+    // 🆕 P3: Delegate to UseCase
+    private val syncStepsUseCase: com.pace.legends.domain.usecase.sync.SyncStepsUseCase
 ) {
     
     // 🆕 Lig değişikliği eventi (UI kutlama için)
@@ -76,14 +77,42 @@ class StepSyncManager @Inject constructor(
         private const val PREF_MONTHLY_OFFSET = "monthly_offset"
         private const val PREF_CURRENT_MONTH = "current_month"
     }
-    
-    private var lastSyncedSteps: Long
-        get() = prefs.getLong(PREF_LAST_SYNCED_STEPS, 0L)
-        set(value) = prefs.edit().putLong(PREF_LAST_SYNCED_STEPS, value).apply()
-    
-    private var lastSyncTime: Long
-        get() = prefs.getLong(PREF_LAST_SYNC_TIME, 0L)
-        set(value) = prefs.edit().putLong(PREF_LAST_SYNC_TIME, value).apply()
+
+    // ... [Properties and Methods for Period Calculation remain the same] ...
+
+    /**
+     * Throttled sync kontrolü
+     * P0 FIX: Mutex ile atomik kontrol ve güncelleme
+     * @return SyncResult indicating outcome
+     */
+    suspend fun syncIfNeeded(
+        monthlySteps: Long,
+        activeTrackId: String?,
+        force: Boolean = false
+    ): com.pace.legends.domain.usecase.sync.SyncResult = syncMutex.withLock {
+        // 🆕 P3: Use SyncStepsUseCase for unified logic
+        val result = syncStepsUseCase(
+            monthlySteps = monthlySteps,
+            activeTrackId = activeTrackId,
+            force = force
+        )
+        
+        // Log outcome
+        when (result) {
+            is com.pace.legends.domain.usecase.sync.SyncResult.Success -> {
+                android.util.Log.d("StepSync", "✅ Sync success: ${result.syncedSteps} steps")
+            }
+            is com.pace.legends.domain.usecase.sync.SyncResult.Failed -> {
+                android.util.Log.e("StepSync", "❌ Sync failed: ${result.error}")
+            }
+            is com.pace.legends.domain.usecase.sync.SyncResult.Throttled -> {
+                 android.util.Log.v("StepSync", "⏸️ Sync throttled")
+            }
+            else -> { /* Skipped or Cheat */ }
+        }
+        
+        return@withLock result
+    }
     
     /**
      * 🆕 Mevcut yarışma dönemini hesapla
@@ -588,182 +617,7 @@ class StepSyncManager @Inject constructor(
             // For now, skipping sync is safer to avoid looping.
             return@withLock false
         }
-        // 🆕 CRITICAL SAFETY: Use externalScope for guaranteed write completion
-        // Even if user closes the screen (ViewModel cancelled), Firestore write WILL complete.
-        externalScope.launch(kotlinx.coroutines.NonCancellable) {
-            performSyncInternal(userId, monthlySteps, activeTrackId, now)
-        }
-        true // Return immediately, write happens in background safely
-    }
-    
-    /**
-     * 🛡️ Gelişmiş Hız İhlali Kontrolü (GPS Destekli)
-     * 
-     * İki katmanlı koruma:
-     * 1. Matematiksel adım hızı kontrolü (GPS olmadan da çalışır)
-     * 2. GPS çapraz doğrulaması (Araç/Bisiklet tespiti)
-     * 
-     * @return true if violation detected
-     */
-    private fun checkSpeedViolation(stepDelta: Long, timeDeltaMs: Long): Boolean {
-        if (stepDelta <= 0 || timeDeltaMs <= 0) return false
-        
-        // Minimum veri seti: Çok kısa sürelerdeki ani zıplamaları yoksay (GPS glitch vb.)
-        if (timeDeltaMs < 5000 && stepDelta < 50) return false
-        
-        val timeSeconds = timeDeltaMs / 1000.0
-        
-        // ==========================================
-        // KATMAN 1: Matematiksel Adım Hızı Kontrolü
-        // (GPS olmadan da ilk savunma hattı)
-        // ==========================================
-        val distanceMeters = stepDelta * 0.762 // Ortalama adım uzunluğu
-        val speedMps = distanceMeters / timeSeconds
-        val pureStepSpeedKmph = speedMps * 3.6
-        
-        // Usain Bolt limiti: 35 km/h (dünya rekoru sprint hızı ~44 km/h ama sürekli değil)
-        val physicsThreshold = if (timeSeconds < 60) 35.0 else 25.0
-        
-        if (pureStepSpeedKmph > physicsThreshold) {
-            android.util.Log.w("AntiCheat", "🚨 PHYSICS VIOLATION: ${String.format("%.2f", pureStepSpeedKmph)} km/h (Steps: $stepDelta, Time: ${timeSeconds}s)")
-            return true
-        }
-        
-        // ==========================================
-        // KATMAN 2: GPS Çapraz Doğrulama
-        // (Araç/Bisiklet tespiti - SADECE ÖN PLANDA)
-        // ==========================================
-        // 🆕 HİBRİT ANTİ-CHEAT: GPS verisi yoksa (arka plan)
-        // sadece matematiksel limite güven, GPS kontrolünü ATLA.
-        val gpsSpeedMps = raceLocationManager.currentSpeedMps.value
-        
-        // GPS kapalıysa veya veri gelmiyorsa (arka planda WorkManager sync)
-        // Bu durumda kullanıcının araçta olup olmadığını bilemeyiz.
-        // Matematiksel limiti geçtiyse (KATMAN 1) zaten yakaladık.
-        if (gpsSpeedMps <= 0.5f) {
-            android.util.Log.d("AntiCheat", "📍 GPS unavailable/background mode - relying on physics limits only")
-            return false // Arka plan sync'i güvenli kabul et
-        }
-        
-        // GPS verisi VAR = Uygulama açık, tam koruma devreye girer
-        val stepCadence = stepDelta.toFloat() / timeSeconds.toFloat() // Adım / Saniye
-        
-        if (raceLocationManager.isMovementSuspicious(stepCadence)) {
-            val gpsSpeedKmph = gpsSpeedMps * 3.6f
-            android.util.Log.w("AntiCheat", "🚨 GPS VIOLATION: GPS=${String.format("%.1f", gpsSpeedKmph)} km/h, Cadence=${String.format("%.2f", stepCadence)} step/s")
-            
-            // Sunucuya logla
-            logSpeedCheatAttempt(
-                userId = authRepository.getCurrentUserId() ?: "unknown",
-                steps = stepDelta,
-                timeMs = timeDeltaMs,
-                gpsSpeedMps = gpsSpeedMps,
-                violationType = "GPS_SPEED_VIOLATION"
-            )
-            return true
-        }
-        
-        return false
-    }
-    
-    /**
-     * 🛡️ Hile Girişimini Cloud Functions'a Logla
-     */
-    private fun logSpeedCheatAttempt(
-        userId: String, 
-        steps: Long, 
-        timeMs: Long,
-        gpsSpeedMps: Float = 0f,
-        violationType: String = "SPEED_VIOLATION"
-    ) {
-        val data = hashMapOf(
-            "userId" to userId,
-            "type" to violationType,
-            "steps" to steps,
-            "durationMs" to timeMs,
-            "stepSpeedKmph" to (steps * 0.762 / (timeMs/1000.0) * 3.6),
-            "gpsSpeedKmph" to (gpsSpeedMps * 3.6),
-            "timestamp" to System.currentTimeMillis()
-        )
 
-        functions
-            .getHttpsCallable("logCheatAttempt")
-            .call(data)
-            .addOnFailureListener { e ->
-                android.util.Log.e("AntiCheat", "❌ Failed to send cheat report: ${e.message}")
-            }
-            .addOnSuccessListener {
-                android.util.Log.i("AntiCheat", "✅ Cheat report sent to server")
-            }
-    }
-    
-
-    /**
-     * Firestore'a yazım işlemi (Sadece users/{userId})
-     * 
-     * 🔄 MİMARİ DEĞİŞİKLİK:
-     * İstemci artık SADECE users/{userId} dokümanını günceller.
-     * Cloud Function (onUserStepSync) bu değişikliği dinleyerek:
-     * - leaderboards/
-     * - qualifying/ veya leagues/members/
-     * koleksiyonlarını otomatik günceller.
-     * 
-     * Bu yaklaşım:
-     * 1. Firestore güvenlik kurallarıyla uyumludur (leaderboards'a client yazamaz)
-     * 2. Çift yazma (dual-write) hatalarını önler
-     * 3. Tek Gerçek Kaynak (Source of Truth) prensibini uygular
-     */
-    private suspend fun performSyncInternal(
-        userId: String,
-        monthlySteps: Long,
-        activeTrackId: String,
-        timestamp: Long
-    ): Boolean {
-        return try {
-            val currentPeriod = getCurrentPeriod()
-            val displayName = authRepository.getCurrentUser()?.displayName ?: "Racer ${userId.take(4)}"
-            
-            // Lig bilgisini al (Cloud Function için gerekli)
-            val leagueInfo = try {
-                leagueRepository.getUserLeagueInfo(userId)
-            } catch (e: Exception) {
-                android.util.Log.w("StepSync", "⚠️ League info unavailable: ${e.message}")
-                null
-            }
-            
-            // SADECE users/{userId} dokümanını güncelle
-            // Cloud Function (onUserStepSync) geri kalan propagasyonu yapacak
-            val userData = mutableMapOf<String, Any>(
-                "monthlySteps" to monthlySteps,
-                "currentMonth" to currentPeriod,
-                "activeTrackId" to activeTrackId,
-                "lastSyncTimestamp" to timestamp,
-                "displayName" to displayName
-            )
-            
-            // Cloud Function'ın lig/eleme kararı için tier bilgisini ekle
-            leagueInfo?.let {
-                userData["leagueTier"] = it.tier.name
-                it.leagueId?.let { id -> userData["leagueId"] = id }
-            }
-            
-            firestore.collection("users")
-                .document(userId)
-                .set(userData, SetOptions.merge())
-                .await()
-            
-            // Başarılı sync, state güncelle
-            lastSyncedSteps = monthlySteps
-            lastSyncTime = timestamp
-            
-            android.util.Log.d("StepSync", "✅ Synced $monthlySteps steps (CF will propagate)")
-            true
-            
-        } catch (e: Exception) {
-            android.util.Log.e("StepSync", "❌ Sync failed: ${e.message}")
-            false
-        }
-    }
     
     /**
      * 🆕 TRACK LOCK-IN: Ayın başında pist seçimi
